@@ -100,13 +100,26 @@ function categoryIcon(name, explicitIcon = "") {
   return normalizeCategoryName(explicitIcon) || ICON_OPTIONS[name]?.[0] || "🍽️";
 }
 
+const LEGACY_CATEGORY_MAP = new Map([
+  ["主食", "细粮"],
+  ["蛋白质", "动物蛋白"],
+  ["蔬果", "蔬菜"],
+  ["饮品", "饮料"],
+  ["奶/饮品", "奶"],
+  ["包装/高钠", "零食"],
+  ["调味", "其他"],
+  ["轻食", "餐食"],
+  ["中式", "餐食"],
+  ["常吃", "其他"]
+]);
+
 function normalizeCategories(categories, defaults) {
   const merged = [];
   const seen = new Set();
-  const add = (category) => {
+  const add = (category, { skipLegacy = false } = {}) => {
     if (!category || typeof category !== "object") return;
     const name = normalizeCategoryName(category.name);
-    if (!name || seen.has(name)) return;
+    if (!name || seen.has(name) || (skipLegacy && LEGACY_CATEGORY_MAP.has(name))) return;
     seen.add(name);
     merged.push({
       id: normalizeCategoryName(category.id) || `category_${name}`,
@@ -117,25 +130,14 @@ function normalizeCategories(categories, defaults) {
 
   for (const category of defaults.categories) add(category);
   if (Array.isArray(categories)) {
-    for (const category of categories) add(category);
+    for (const category of categories) add(category, { skipLegacy: true });
   }
   return merged;
 }
 
-const LEGACY_CATEGORY_MAP = new Map([
-  ["主食", "细粮"],
-  ["蛋白质", "动物蛋白"],
-  ["蔬果", "蔬菜"],
-  ["饮品", "饮料"],
-  ["奶/饮品", "奶"],
-  ["常吃", "其他"],
-  ["自定义", "其他"]
-]);
-
 function normalizeFoodCategory(value, validCategoryNames) {
   const category = normalizeCategoryName(value);
   if (!category) return "其他";
-  if (validCategoryNames.has(category)) return category;
   const mapped = LEGACY_CATEGORY_MAP.get(category) || category;
   return validCategoryNames.has(mapped) ? mapped : "其他";
 }

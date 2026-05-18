@@ -97,6 +97,33 @@ test("normalizes legacy food categories, nutrition, and simplified shape", () =>
   assert.equal(normalized.foods.find((food) => food.id === "legacy_unknown").category, "其他");
 });
 
+test("maps legacy food categories even when old categories were persisted", () => {
+  const normalized = normalizeState({
+    categories: [
+      { id: "old_staple", name: "主食", icon: "🍚" },
+      { id: "custom_breakfast", name: "早餐", icon: "🌅" }
+    ],
+    foods: [{
+      id: "legacy_rice",
+      name: "旧米饭",
+      category: "主食",
+      kind: "regular",
+      nutritionMode: "per100g",
+      nutrition: { calories: 116, protein: 2.6, carbs: 25.9, fat: 0.3, sodium: 1 }
+    }, {
+      id: "custom_breakfast_food",
+      name: "早餐组合",
+      category: "早餐",
+      nutritionPer100g: { calories: 200, protein: 8, carbs: 30, fat: 5, sodium: 200 }
+    }]
+  });
+
+  assert.equal(normalized.categories.some((category) => category.name === "主食"), false);
+  assert.ok(normalized.categories.find((category) => category.name === "早餐"));
+  assert.equal(normalized.foods.find((food) => food.id === "legacy_rice").category, "细粮");
+  assert.equal(normalized.foods.find((food) => food.id === "custom_breakfast_food").category, "早餐");
+});
+
 test("normalizes malformed foods back to built-in defaults", () => {
   const defaults = createDefaultState();
   const normalized = normalizeState({ foods: [null, { id: "", name: "", nutrition: {} }] });
