@@ -33,7 +33,7 @@
 - Create: `src/domain.js`
 - Test: `tests/domain.test.mjs`
 
-- [ ] **Step 1: Create the failing domain tests**
+- [x] **Step 1: Create the failing domain tests**
 
 Create `tests/domain.test.mjs`:
 
@@ -155,7 +155,7 @@ test("formats local dates as yyyy-mm-dd", () => {
 });
 ```
 
-- [ ] **Step 2: Add package scripts and verify the domain test fails**
+- [x] **Step 2: Add package scripts and verify the domain test fails**
 
 Create `package.json`:
 
@@ -185,7 +185,7 @@ Run: `npm test`
 
 Expected: FAIL because `src/domain.js` does not exist or does not export the tested functions.
 
-- [ ] **Step 3: Implement the nutrition domain**
+- [x] **Step 3: Implement the nutrition domain**
 
 Create `src/domain.js`:
 
@@ -355,13 +355,13 @@ export function createId(prefix) {
 }
 ```
 
-- [ ] **Step 4: Run the domain tests**
+- [x] **Step 4: Run the domain tests**
 
 Run: `npm test`
 
 Expected: PASS for `tests/domain.test.mjs`.
 
-- [ ] **Step 5: Commit Task 1**
+- [x] **Step 5: Commit Task 1**
 
 ```bash
 git add package.json .gitignore src/domain.js tests/domain.test.mjs
@@ -374,7 +374,7 @@ git commit -m "feat: add nutrition domain"
 - Create: `src/store.js`
 - Test: `tests/store.test.mjs`
 
-- [ ] **Step 1: Create the failing storage tests**
+- [x] **Step 1: Create the failing storage tests**
 
 Create `tests/store.test.mjs`:
 
@@ -458,13 +458,13 @@ test("throws a useful error for invalid import JSON", () => {
 });
 ```
 
-- [ ] **Step 2: Run storage test to verify it fails**
+- [x] **Step 2: Run storage test to verify it fails**
 
 Run: `npm test`
 
 Expected: FAIL because `src/store.js` does not exist or does not export the tested functions.
 
-- [ ] **Step 3: Implement the storage adapter**
+- [x] **Step 3: Implement the storage adapter**
 
 Create `src/store.js`:
 
@@ -524,13 +524,13 @@ export function importState(json) {
 }
 ```
 
-- [ ] **Step 4: Run the full test suite**
+- [x] **Step 4: Run the full test suite**
 
 Run: `npm test`
 
 Expected: PASS for domain and storage tests.
 
-- [ ] **Step 5: Commit Task 2**
+- [x] **Step 5: Commit Task 2**
 
 ```bash
 git add src/store.js tests/store.test.mjs
@@ -545,7 +545,7 @@ git commit -m "feat: add local storage adapter"
 - Create: `manifest.webmanifest`
 - Create: `assets/icon.svg`
 
-- [ ] **Step 1: Create the app shell**
+- [x] **Step 1: Create the app shell**
 
 Create `index.html`:
 
@@ -590,7 +590,7 @@ Create `index.html`:
 </html>
 ```
 
-- [ ] **Step 2: Create the visual styling**
+- [x] **Step 2: Create the visual styling**
 
 Create `src/styles.css` with mobile-first styles for the full app. Include these selectors and values:
 
@@ -971,7 +971,7 @@ h1 {
 }
 ```
 
-- [ ] **Step 3: Create manifest and icon**
+- [x] **Step 3: Create manifest and icon**
 
 Create `manifest.webmanifest`:
 
@@ -1007,7 +1007,7 @@ Create `assets/icon.svg`:
 </svg>
 ```
 
-- [ ] **Step 4: Verify static files and tests**
+- [x] **Step 4: Verify static files and tests**
 
 Run: `npm test`
 
@@ -1021,7 +1021,7 @@ In a second terminal or after starting the server in the background, run: `curl 
 
 Expected: output contains `<title>吃了么</title>`.
 
-- [ ] **Step 5: Commit Task 3**
+- [x] **Step 5: Commit Task 3**
 
 ```bash
 git add index.html src/styles.css manifest.webmanifest assets/icon.svg
@@ -1034,7 +1034,7 @@ git commit -m "feat: add pwa shell"
 - Create: `src/app.js`
 - Modify: `src/domain.js`
 
-- [ ] **Step 1: Add entry creation helpers to the domain**
+- [x] **Step 1: Add entry creation helpers to the domain**
 
 Append these exports to `src/domain.js`:
 
@@ -1063,7 +1063,7 @@ export function buildEntryItem(food, portion, gramsOverride) {
 }
 ```
 
-- [ ] **Step 2: Extend domain tests for entry helpers**
+- [x] **Step 2: Extend domain tests for entry helpers**
 
 Append to `tests/domain.test.mjs`:
 
@@ -1096,7 +1096,7 @@ Run: `npm test`
 
 Expected: PASS.
 
-- [ ] **Step 3: Implement app rendering and interactions**
+- [x] **Step 3: Implement app rendering and interactions**
 
 Create `src/app.js`:
 
@@ -1550,7 +1550,7 @@ modalRoot.addEventListener("change", (event) => {
 render();
 ```
 
-- [ ] **Step 4: Run tests and serve the app**
+- [x] **Step 4: Run tests and serve the app**
 
 Run: `npm test`
 
@@ -1560,7 +1560,7 @@ Run: `npm run serve`
 
 Expected: the app loads at `http://127.0.0.1:4173/`, shows “吃了么”, has the bottom navigation, and no console-breaking syntax error in the browser.
 
-- [ ] **Step 5: Manually verify core logging**
+- [x] **Step 5: Manually verify core logging**
 
 In the browser:
 
@@ -1572,7 +1572,7 @@ In the browser:
 6. Refresh the page.
 7. Confirm the record remains visible.
 
-- [ ] **Step 6: Commit Task 4**
+- [x] **Step 6: Commit Task 4**
 
 ```bash
 git add src/domain.js src/app.js tests/domain.test.mjs
@@ -1586,7 +1586,7 @@ git commit -m "feat: add food logging interface"
 - Modify: `src/styles.css`
 - Test: `tests/domain.test.mjs`
 
-- [ ] **Step 1: Add a water entry domain test**
+- [x] **Step 1: Add a water entry domain test**
 
 Append to `tests/domain.test.mjs`:
 
@@ -1607,7 +1607,7 @@ Run: `npm test`
 
 Expected: PASS because `summarizeDay` already supports water entries.
 
-- [ ] **Step 2: Add water controls to the Today view**
+- [x] **Step 2: Add water controls to the Today view**
 
 Modify `renderQuickAdd()` in `src/app.js` so the actions row includes a water button:
 
@@ -1632,7 +1632,7 @@ Add this case to the document click handler:
   }
 ```
 
-- [ ] **Step 3: Improve settings save feedback and import error handling**
+- [x] **Step 3: Improve settings save feedback and import error handling**
 
 In `src/app.js`, update `importJson()`:
 
@@ -1675,7 +1675,7 @@ Update the settings submit branch:
   }
 ```
 
-- [ ] **Step 4: Add small-screen action wrapping**
+- [x] **Step 4: Add small-screen action wrapping**
 
 Append to `src/styles.css`:
 
@@ -1699,7 +1699,7 @@ Append to `src/styles.css`:
 }
 ```
 
-- [ ] **Step 5: Verify tests and manual flows**
+- [x] **Step 5: Verify tests and manual flows**
 
 Run: `npm test`
 
@@ -1713,7 +1713,7 @@ Manual checks at `http://127.0.0.1:4173/`:
 4. Confirm today's water value appears in the last row.
 5. Open `设置`, change a target value, save, refresh, and confirm the value persists.
 
-- [ ] **Step 6: Commit Task 5**
+- [x] **Step 6: Commit Task 5**
 
 ```bash
 git add src/app.js src/styles.css tests/domain.test.mjs
@@ -1726,7 +1726,7 @@ git commit -m "feat: add water and settings polish"
 - Create: `README.md`
 - Modify: `docs/superpowers/plans/2026-05-18-chileme-pwa.md`
 
-- [ ] **Step 1: Create README**
+- [x] **Step 1: Create README**
 
 Create `README.md`:
 
@@ -1762,7 +1762,7 @@ npm test
 - 营养数值是粗略估算，不是医疗建议。
 ```
 
-- [ ] **Step 2: Run automated verification**
+- [x] **Step 2: Run automated verification**
 
 Run: `npm test`
 
@@ -1776,7 +1776,7 @@ Run: `curl -sSf http://127.0.0.1:4173/index.html`
 
 Expected: output contains `src="./src/app.js"`.
 
-- [ ] **Step 3: Run mobile layout manual verification**
+- [x] **Step 3: Run mobile layout manual verification**
 
 Open `http://127.0.0.1:4173/` in a browser with a narrow mobile viewport around 390px wide.
 
@@ -1791,11 +1791,11 @@ Verify:
 7. Adding a record with a small photo shows a thumbnail.
 8. Refresh keeps data.
 
-- [ ] **Step 4: Update plan checkboxes as completed**
+- [x] **Step 4: Update plan checkboxes as completed**
 
 Edit `docs/superpowers/plans/2026-05-18-chileme-pwa.md` and change completed task checkboxes from `- [ ]` to `- [x]`.
 
-- [ ] **Step 5: Commit final docs**
+- [x] **Step 5: Commit final docs**
 
 ```bash
 git add README.md docs/superpowers/plans/2026-05-18-chileme-pwa.md
