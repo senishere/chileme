@@ -45,7 +45,7 @@ test("summarizes entries and water for one local day", () => {
   state.entries = [
     {
       id: "entry_a",
-      timestamp: "2026-05-18T11:20:00+08:00",
+      timestamp: "2026-05-18T11:20:00",
       items: [
         {
           foodId: "food_rice",
@@ -58,7 +58,7 @@ test("summarizes entries and water for one local day", () => {
     },
     {
       id: "entry_b",
-      timestamp: "2026-05-17T23:20:00+08:00",
+      timestamp: "2026-05-17T23:20:00",
       items: [
         {
           foodId: "food_rice",
@@ -71,7 +71,7 @@ test("summarizes entries and water for one local day", () => {
     }
   ];
   state.waterEntries = [
-    { id: "water_a", timestamp: "2026-05-18T15:30:00+08:00", milliliters: 300 }
+    { id: "water_a", timestamp: "2026-05-18T15:30:00", milliliters: 300 }
   ];
 
   assert.deepEqual(summarizeDay(state, day), {
@@ -89,7 +89,7 @@ test("builds seven days of stats ending on the selected date", () => {
   state.entries = [
     {
       id: "entry_a",
-      timestamp: "2026-05-18T11:20:00+08:00",
+      timestamp: "2026-05-18T11:20:00",
       items: [
         {
           foodId: "food_rice",
@@ -111,5 +111,5 @@ test("builds seven days of stats ending on the selected date", () => {
 });
 
 test("formats local dates as yyyy-mm-dd", () => {
-  assert.equal(dateKey(new Date("2026-05-18T09:05:00+08:00")), "2026-05-18");
+  assert.equal(dateKey(new Date(2026, 4, 18, 9, 5)), "2026-05-18");
 });

@@ -31,6 +31,17 @@ test("loads default state when storage is empty", () => {
   assert.equal(state.entries.length, 0);
 });
 
+test("clears corrupt persisted state and loads defaults", () => {
+  const storage = memoryStorage();
+  storage.setItem("chileme.state.v1", "{bad json");
+
+  const state = createStore(storage).load();
+
+  assert.equal(state.foods.length >= 4, true);
+  assert.equal(state.entries.length, 0);
+  assert.equal(storage.getItem("chileme.state.v1"), null);
+});
+
 test("saves and reloads state", () => {
   const storage = memoryStorage();
   const store = createStore(storage);
@@ -55,6 +66,31 @@ test("normalizes partial imported state", () => {
   assert.deepEqual(normalized.entries, []);
   assert.deepEqual(normalized.waterEntries, []);
   assert.equal(typeof normalized.dailyGoal, "object");
+});
+
+test("normalizes invalid calibration and goal leaf values", () => {
+  const defaults = createDefaultState();
+  const normalized = normalizeState({
+    calibration: {
+      fistWidthCm: "wide",
+      palmWidthCm: 9.25,
+      fingerWidthCm: "2.1",
+      containers: "bad"
+    },
+    dailyGoal: {
+      calories: "many",
+      protein: 120,
+      waterMl: "2300"
+    }
+  });
+
+  assert.equal(normalized.calibration.fistWidthCm, defaults.calibration.fistWidthCm);
+  assert.equal(normalized.calibration.palmWidthCm, 9.25);
+  assert.equal(normalized.calibration.fingerWidthCm, 2.1);
+  assert.deepEqual(normalized.calibration.containers, defaults.calibration.containers);
+  assert.equal(normalized.dailyGoal.calories, defaults.dailyGoal.calories);
+  assert.equal(normalized.dailyGoal.protein, 120);
+  assert.equal(normalized.dailyGoal.waterMl, 2300);
 });
 
 test("exports and imports JSON state", () => {
