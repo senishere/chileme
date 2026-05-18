@@ -378,15 +378,12 @@ export function dailyStructure(state, dayKey = dateKey()) {
     protein: { label: "蛋白质", unit: "g", value: summary.protein, target: targets.protein },
     carbs: { label: "碳水", unit: "g", value: summary.carbs, target: targets.carbs },
     fat: { label: "脂肪", unit: "g", value: summary.fat, target: targets.fat },
-    sodium: { label: "钠", unit: "mg", value: summary.sodium, target: targets.sodium },
     waterMl: { label: "饮水", unit: "ml", value: summary.waterMl, target: targets.waterMl }
   };
 
   for (const [key, metric] of Object.entries(metrics)) {
     metric.ratio = metric.target ? roundMetric(metric.value / metric.target) : 0;
-    metric.status = key === "sodium"
-      ? limitStatus(metric.ratio)
-      : nutritionStatus(metric.ratio);
+    metric.status = nutritionStatus(metric.ratio);
   }
 
   return metrics;

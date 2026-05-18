@@ -121,35 +121,75 @@ function isLegacyCategoryName(name) {
 function normalizeCategories(categories, defaults, foods = []) {
   const merged = [];
   const seen = new Set();
+  const defaultCategoryByName = new Map(defaults.categories.map((category) => [category.name, category]));
+  const foodCategoryNames = new Set(
+    Array.isArray(foods)
+      ? foods.map((food) => normalizeCategoryName(food?.category)).filter(Boolean)
+      : []
+  );
+  const renamedDefaultTargets = new Set(
+    Array.isArray(categories)
+      ? categories
+        .filter((category) => {
+          const name = normalizeCategoryName(category?.name);
+          const id = normalizeCategoryName(category?.id);
+          return name && id === `category_${name}`;
+        })
+        .map((category) => LEGACY_CATEGORY_MAP.get(normalizeCategoryName(category.name)))
+        .filter(Boolean)
+      : []
+  );
   const add = (category, { skipLegacy = false } = {}) => {
     if (!category || typeof category !== "object") return;
     const name = normalizeCategoryName(category.name);
-    if (!name || seen.has(name) || (skipLegacy && isLegacyCategoryName(name))) return;
+    const id = normalizeCategoryName(category.id) || `category_${name}`;
+    const currentCategoryId = id === `category_${name}`;
+    if (!name || seen.has(name) || (skipLegacy && isLegacyCategoryName(name) && !currentCategoryId)) return;
+    if (renamedDefaultTargets.has(name) && defaultCategoryByName.has(name) && !foodCategoryNames.has(name)) return;
     seen.add(name);
     merged.push({
-      id: normalizeCategoryName(category.id) || `category_${name}`,
+      id,
       name,
       icon: categoryIcon(name, category.icon)
     });
   };
+  const addFoodCategory = (food, { allowCustom = true } = {}) => {
+    if (!food || typeof food !== "object") return;
+    const rawName = normalizeCategoryName(food.category);
+    if (!rawName) return;
+    const name = seen.has(rawName) ? rawName : LEGACY_CATEGORY_MAP.get(rawName) || rawName;
+    if (!name || isLegacyCategoryName(name)) return;
+    if (!allowCustom && !defaultCategoryByName.has(name)) return;
+    add({ id: `category_${name}`, name, icon: food.icon || food.emoji || defaultCategoryByName.get(name)?.icon }, {
+      skipLegacy: true
+    });
+  };
 
-  for (const category of defaults.categories) add(category);
   if (Array.isArray(categories)) {
     for (const category of categories) add(category, { skipLegacy: true });
-  } else if (Array.isArray(foods)) {
-    for (const food of foods) {
-      if (!food || typeof food !== "object") continue;
-      const name = normalizeCategoryName(food.category);
-      if (!name || isLegacyCategoryName(name)) continue;
-      add({ id: `category_${name}`, name, icon: food.icon || food.emoji }, { skipLegacy: true });
+    if (Array.isArray(foods)) {
+      for (const food of foods) addFoodCategory(food, { allowCustom: false });
+      const foodIds = new Set(foods.map((food) => food?.id).filter(Boolean));
+      for (const food of defaults.foods) {
+        if (!foodIds.has(food.id)) add(defaultCategoryByName.get(food.category));
+      }
+    } else {
+      for (const category of defaults.categories) add(category);
     }
+  } else if (Array.isArray(foods)) {
+    for (const category of defaults.categories) add(category);
+    for (const food of foods) addFoodCategory(food);
+  } else {
+    for (const category of defaults.categories) add(category);
   }
+  if (!seen.has("其他")) add(defaultCategoryByName.get("其他") || { id: "category_其他", name: "其他", icon: "🍽️" });
   return merged;
 }
 
 function normalizeFoodCategory(value, validCategoryNames) {
   const category = normalizeCategoryName(value);
   if (!category) return "其他";
+  if (validCategoryNames.has(category)) return category;
   const mapped = LEGACY_CATEGORY_MAP.get(category) || category;
   return validCategoryNames.has(mapped) ? mapped : "其他";
 }

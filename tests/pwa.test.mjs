@@ -17,7 +17,7 @@ test("registers the service worker from the app entrypoint only when supported",
 test("service worker precaches the app shell for offline startup", () => {
   const sw = readText("../sw.js");
 
-  assert.match(sw, /const CACHE_NAME = "chileme-app-shell-v\d+"/);
+  assert.match(sw, /const CACHE_NAME = "chileme-app-shell-v2"/);
   for (const asset of [
     "./",
     "./index.html",
@@ -33,6 +33,18 @@ test("service worker precaches the app shell for offline startup", () => {
   }
   assert.match(sw, /self\.addEventListener\("install"/);
   assert.match(sw, /cache\.addAll\(APP_SHELL\)/);
+});
+
+test("service worker refreshes static assets from network before using cache", () => {
+  const sw = readText("../sw.js");
+
+  const fetchBlock = sw.match(/if \(request\.mode === "navigate"\)[\s\S]*?\n  event\.respondWith\(([\s\S]*?)\n  \);\n\}\);/)?.[1] || "";
+  const networkIndex = fetchBlock.indexOf("fetch(request)");
+  const cacheIndex = fetchBlock.indexOf("caches.match(request)");
+
+  assert.notEqual(networkIndex, -1);
+  assert.notEqual(cacheIndex, -1);
+  assert.equal(networkIndex < cacheIndex, true);
 });
 
 test("service worker serves navigation requests from cached index when offline", () => {
@@ -74,6 +86,31 @@ test("app exposes simplified recording and food editing contracts", () => {
   assert.doesNotMatch(app, /默认份量|营养标注方式|每份重量|整包重量|液体密度|拳头宽度|掌心宽度|手指宽度|常用容器/);
 });
 
+test("quick add rail has no standalone water shortcut and no prefilled 100g draft item", () => {
+  const app = readText("../src/app.js");
+  const quickBlock = app.match(/function renderQuickAdd\(\) \{[\s\S]*?function renderTimeline/)?.[0] || "";
+  const modalBlock = app.match(/function openEntryModal\([\s\S]*?function openFoodForm/)?.[0] || "";
+
+  assert.ok(quickBlock);
+  assert.doesNotMatch(quickBlock, /\+ 300ml|data-action="add-water"/);
+  assert.ok(modalBlock);
+  assert.doesNotMatch(modalBlock, /foodId \? \[createDraftItem/);
+  assert.match(app, /if \(!entryDraft\.items\.length\)/);
+});
+
+test("quick add calorie label separates number from unit for compact cards", () => {
+  const app = readText("../src/app.js");
+  const quickBlock = app.match(/function renderQuickAdd\(\) \{[\s\S]*?function renderTimeline/)?.[0] || "";
+  const css = readText("../src/styles.css");
+
+  assert.ok(quickBlock);
+  assert.match(quickBlock, /quick-calories/);
+  assert.match(quickBlock, /quick-calorie-value/);
+  assert.match(quickBlock, /quick-calorie-unit/);
+  assert.match(css, /\.quick-calorie-value/);
+  assert.match(css, /\.quick-calorie-unit/);
+});
+
 test("domain no longer exports temporary portion compatibility helpers", () => {
   const domain = readText("../src/domain.js");
 
@@ -95,10 +132,21 @@ test("category manager supports selecting default category icons", () => {
 test("today structure labels severe low status as serious shortage", () => {
   const app = readText("../src/app.js");
   const structureBlock = app.match(/function renderStructure\([\s\S]*?function renderToday/)?.[0] || "";
+  const iconBlock = app.match(/function structureIcon\(key\) \{[\s\S]*?function renderStructure/)?.[0] || "";
+  const css = readText("../src/styles.css");
 
   assert.match(app, /status === "severe-low"\)\s+return "严重不足"/);
+  assert.match(iconBlock, /🍱/);
+  assert.match(iconBlock, /🥚/);
+  assert.match(iconBlock, /🍚/);
+  assert.match(iconBlock, /🥑/);
+  assert.match(iconBlock, /💧/);
+  assert.doesNotMatch(iconBlock, /return "火"|return "蛋"|return "碳"|return "脂"|return "水"/);
   assert.ok(structureBlock);
   assert.match(structureBlock, /metric\.ratio/);
+  assert.match(structureBlock, /structure-icon/);
+  assert.match(structureBlock, /metric-\$\{escapeAttr\(key\)\}/);
+  assert.match(css, /white-space: nowrap/);
   assert.doesNotMatch(structureBlock, /metric\.value[\s\S]*metric\.target/);
 });
 
@@ -118,6 +166,19 @@ test("stats source renders trend tabs without daily sodium rows", () => {
   assert.match(statsBlock, /最近一周/);
   assert.match(statsBlock, /最近一月/);
   assert.match(statsBlock, /trendStats/);
-  assert.doesNotMatch(statsBlock, /trend-summary|average\(/);
+  assert.match(statsBlock, /trend-summary/);
+  assert.match(statsBlock, /trendLabel\(day, index, stats\.length\)/);
   assert.doesNotMatch(statsBlock, /day\.sodium/);
+});
+
+test("settings source groups export controls into one form instead of four sibling buttons", () => {
+  const app = readText("../src/app.js");
+  const settingsBlock = app.match(/function renderSettings\([\s\S]*?function render\(\)/)?.[0] || "";
+
+  assert.ok(settingsBlock);
+  assert.match(settingsBlock, /data-action="export-range-form"/);
+  assert.match(settingsBlock, /name="exportDays"/);
+  assert.match(settingsBlock, /name="exportFormat"/);
+  assert.doesNotMatch(settingsBlock, /data-action="export-range" data-days="7"/);
+  assert.doesNotMatch(settingsBlock, /data-action="export-range" data-days="30"/);
 });

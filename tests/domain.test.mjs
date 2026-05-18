@@ -184,6 +184,8 @@ test("category helpers add rename delete and move foods to fallback category", (
     category: "自定义"
   };
   const renamed = renameCategory({ ...added, foods: [...added.foods, customFood] }, "自定义", "备餐");
+  assert.equal(renamed.categories.filter((category) => category.name === "自定义").length, 0);
+  assert.equal(renamed.categories.filter((category) => category.name === "备餐").length, 1);
   assert.ok(renamed.categories.find((category) => category.name === "备餐"));
   assert.equal(renamed.foods.find((food) => food.id === "food_custom").category, "备餐");
 
@@ -373,5 +375,5 @@ test("builds daily structure statuses from summary and targets", () => {
   assert.equal(structure.calories.status, "normal");
   assert.equal(structure.protein.status, "low");
   assert.equal(structure.waterMl.status, "severe-low");
-  assert.equal(structure.sodium.status, "high");
+  assert.equal(structure.sodium, undefined);
 });

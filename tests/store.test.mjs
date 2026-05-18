@@ -132,6 +132,39 @@ test("maps legacy food categories even when old categories were persisted", () =
   assert.equal(normalized.foods.find((food) => food.id === "custom_breakfast_food").category, "早餐");
 });
 
+test("saving renamed built-in categories does not recreate the old default category", () => {
+  const state = createDefaultState();
+  state.categories = state.categories.map((category) => (
+    category.name === "细粮" ? { ...category, id: "category_主食", name: "主食" } : category
+  ));
+  state.foods = state.foods.map((food) => (
+    food.category === "细粮" ? { ...food, category: "主食" } : food
+  ));
+
+  const normalized = normalizeState(state);
+
+  assert.equal(normalized.categories.some((category) => category.name === "细粮"), false);
+  assert.equal(normalized.categories.filter((category) => category.name === "主食").length, 1);
+  assert.equal(normalized.foods.find((food) => food.id === "food_rice").category, "主食");
+});
+
+test("normalizes existing duplicate category left by a previous built-in rename save", () => {
+  const state = createDefaultState();
+  state.categories = [
+    ...state.categories,
+    { id: "category_主食", name: "主食", icon: "🍚" }
+  ];
+  state.foods = state.foods.map((food) => (
+    food.category === "细粮" ? { ...food, category: "主食" } : food
+  ));
+
+  const normalized = normalizeState(state);
+
+  assert.equal(normalized.categories.some((category) => category.name === "细粮"), false);
+  assert.equal(normalized.categories.filter((category) => category.name === "主食").length, 1);
+  assert.equal(normalized.foods.find((food) => food.id === "food_rice").category, "主食");
+});
+
 test("infers implicit custom categories from legacy food rows", () => {
   const normalized = normalizeState({
     foods: [{

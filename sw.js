@@ -1,4 +1,4 @@
-const CACHE_NAME = "chileme-app-shell-v1";
+const CACHE_NAME = "chileme-app-shell-v2";
 
 const APP_SHELL = [
   "./",
@@ -42,15 +42,13 @@ self.addEventListener("fetch", (event) => {
   }
 
   event.respondWith(
-    caches.match(request).then((cached) => (
-      cached || fetch(request).then((response) => {
-        if (!response || response.status !== 200 || response.type !== "basic") {
-          return response;
-        }
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+    fetch(request).then((response) => {
+      if (!response || response.status !== 200 || response.type !== "basic") {
         return response;
-      }).catch(() => cached)
-    ))
+      }
+      const copy = response.clone();
+      caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+      return response;
+    }).catch(() => caches.match(request))
   );
 });

@@ -154,14 +154,24 @@ function statusLabel(status) {
   return "估算";
 }
 
+function structureIcon(key) {
+  if (key === "calories") return "🍱";
+  if (key === "protein") return "🥚";
+  if (key === "carbs") return "🍚";
+  if (key === "fat") return "🥑";
+  if (key === "waterMl") return "💧";
+  return "🍽️";
+}
+
 function renderStructure(day) {
   const metrics = dailyStructure(state, day);
   const rows = Object.entries(metrics).map(([key, metric]) => {
     const progress = Math.min(100, Math.round((metric.ratio || 0) * 100));
     const ratioLabel = `${Math.round((metric.ratio || 0) * 100)}%`;
     return `
-      <article class="structure-row ${escapeAttr(metric.status)}">
-        <div>
+      <article class="structure-row metric-${escapeAttr(key)} ${escapeAttr(metric.status)}">
+        <span class="structure-icon" aria-hidden="true">${escapeHtml(structureIcon(key))}</span>
+        <div class="structure-label">
           <strong>${escapeHtml(metric.label)}</strong>
           <span>达成 ${escapeHtml(ratioLabel)}</span>
         </div>
@@ -187,7 +197,10 @@ function renderQuickAdd() {
       <button class="quick-card" type="button" data-action="open-entry" data-food-id="${escapeAttr(food.id)}">
         ${quickThumbHtml(food)}
         <span class="quick-name">${escapeHtml(food.name)}</span>
-        <span class="quick-portion">${formatNumber(food.nutritionPer100g?.calories || 0)} kcal/100g</span>
+        <span class="quick-calories">
+          <span class="quick-calorie-value">${formatNumber(food.nutritionPer100g?.calories || 0)}</span>
+          <span class="quick-calorie-unit">kcal/100g</span>
+        </span>
       </button>
     `).join("");
 
@@ -201,7 +214,6 @@ function renderQuickAdd() {
       <div class="quick-rail">${cards || `<div class="empty">添加第一个常吃食物</div>`}</div>
       <div class="actions-row">
         <button class="button secondary" type="button" data-action="show-foods">搜索/更多</button>
-        <button class="button secondary" type="button" data-action="add-water">+ 300ml</button>
         <button class="button" type="button" data-action="open-entry">+ 自定义</button>
       </div>
     </section>
@@ -307,12 +319,18 @@ function renderFoods() {
 function renderStats() {
   const stats = trendStats(state, dateKey(), statsDays);
   const maxCalories = Math.max(1, ...stats.map((day) => day.calories));
-  const bars = stats.map((day) => `
-    <article class="trend-day" title="${escapeAttr(day.date)}">
+  const totalCalories = stats.reduce((sum, day) => sum + day.calories, 0);
+  const averageCalories = Math.round(totalCalories / stats.length);
+  const activeDays = stats.filter((day) => day.entryCount > 0 || day.waterMl > 0).length;
+  const bars = stats.map((day, index) => {
+    const label = trendLabel(day, index, stats.length);
+    return `
+    <article class="trend-day ${label ? "has-label" : ""}" title="${escapeAttr(day.date)} · ${formatNumber(day.calories)} kcal">
       <span style="height: ${Math.max(4, Math.round((day.calories / maxCalories) * 100))}%"></span>
-      <em>${escapeHtml(day.date.slice(5))}</em>
+      ${label ? `<em>${escapeHtml(label)}</em>` : ""}
     </article>
-  `).join("");
+  `;
+  }).join("");
 
   root.innerHTML = `
     <section class="panel">
@@ -321,9 +339,20 @@ function renderStats() {
         <button class="${statsDays === 7 ? "active" : ""}" type="button" data-action="set-stats-range" data-days="7">最近一周</button>
         <button class="${statsDays === 30 ? "active" : ""}" type="button" data-action="set-stats-range" data-days="30">最近一月</button>
       </div>
+      <div class="trend-summary" aria-label="统计摘要">
+        <article><strong>${formatNumber(totalCalories)}</strong><span>总热量 kcal</span></article>
+        <article><strong>${formatNumber(averageCalories)}</strong><span>日均 kcal</span></article>
+        <article><strong>${activeDays}</strong><span>有记录天数</span></article>
+      </div>
       <div class="trend-bars" aria-label="热量趋势">${bars}</div>
     </section>
   `;
+}
+
+function trendLabel(day, index, total) {
+  if (total <= 7) return day.date.slice(5);
+  if (index === 0 || index === total - 1 || index % 5 === 0) return day.date.slice(5);
+  return "";
 }
 
 function renderSettings() {
@@ -342,19 +371,23 @@ function renderSettings() {
         <label class="field"><span>目标</span><select name="goal"><option value="maintain" ${state.profile.goal === "maintain" ? "selected" : ""}>维持</option><option value="lose" ${state.profile.goal === "lose" ? "selected" : ""}>减脂</option><option value="gain" ${state.profile.goal === "gain" ? "selected" : ""}>增肌</option></select></label>
         <button class="button" type="submit">保存设置</button>
       </form>
-      <div class="actions-row">
-        <button class="button secondary" type="button" data-action="export">导出 JSON</button>
-        <button class="button secondary" type="button" data-action="import">导入 JSON</button>
+      <div class="settings-group">
+        <h3>完整备份</h3>
+        <div class="actions-row">
+          <button class="button secondary" type="button" data-action="export">导出 JSON</button>
+          <button class="button secondary" type="button" data-action="import">导入 JSON</button>
+        </div>
       </div>
-      <div class="actions-row">
-        <button class="button secondary" type="button" data-action="export-range" data-days="7" data-format="csv">7 天 CSV</button>
-        <button class="button secondary" type="button" data-action="export-range" data-days="7" data-format="json">7 天 JSON</button>
+      <div class="settings-group">
+        <h3>记录明细</h3>
+        <form class="export-form" data-action="export-range-form">
+          <label class="field"><span>范围</span><select name="exportDays"><option value="7">最近 7 天</option><option value="30">最近 30 天</option></select></label>
+          <label class="field"><span>格式</span><select name="exportFormat"><option value="csv">CSV 表格</option><option value="json">JSON 数据</option></select></label>
+          <button class="button" type="submit">导出明细</button>
+        </form>
       </div>
-      <div class="actions-row">
-        <button class="button secondary" type="button" data-action="export-range" data-days="30" data-format="csv">30 天 CSV</button>
-        <button class="button secondary" type="button" data-action="export-range" data-days="30" data-format="json">30 天 JSON</button>
-      </div>
-      <div class="actions-row">
+      <div class="settings-group danger-zone">
+        <h3>本地数据</h3>
         <button class="button danger" type="button" data-action="clear-data">清空本地数据</button>
       </div>
     </section>
@@ -465,7 +498,7 @@ function openEntryModal(foodId = "", entryId = "") {
     : {
         entryId: "",
         timestamp: "",
-        items: foodId ? [createDraftItem(selectedFoodId)].filter(Boolean) : [],
+        items: [],
         note: "",
         photo: ""
       };
@@ -775,14 +808,6 @@ document.addEventListener("click", (event) => {
       saveAndRender();
     }
   }
-  if (action === "add-water") {
-    state.waterEntries.push({
-      id: createId("water"),
-      timestamp: new Date().toISOString(),
-      milliliters: 300
-    });
-    saveAndRender();
-  }
   if (action === "open-food-form") openFoodForm();
   if (action === "edit-food") openFoodForm(target.dataset.foodId || "");
   if (action === "open-category-manager") openCategoryManager();
@@ -850,7 +875,6 @@ document.addEventListener("click", (event) => {
     state.entries = state.entries.filter((entry) => entry.id !== target.dataset.entryId);
     saveAndRender();
   }
-  if (action === "export-range") exportRange(target.dataset.days, target.dataset.format);
   if (action === "export") exportJson();
   if (action === "import") importJson();
   if (action === "clear-data" && confirm("清空本地数据？")) {
@@ -914,6 +938,10 @@ document.addEventListener("submit", async (event) => {
     };
     saveAndRender();
     alert("设置已保存");
+  }
+  if (action === "export-range-form") {
+    const data = new FormData(form);
+    exportRange(data.get("exportDays"), data.get("exportFormat"));
   }
 });
 
