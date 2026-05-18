@@ -161,3 +161,26 @@ export function createId(prefix) {
   const random = Math.random().toString(36).slice(2, 9);
   return `${prefix}_${Date.now().toString(36)}_${random}`;
 }
+
+export function findFood(state, foodId) {
+  return (state.foods || []).find((food) => food.id === foodId);
+}
+
+export function findPortion(state, portionId) {
+  return (state.portions || []).find((portion) => portion.id === portionId);
+}
+
+export function portionsForFood(state, foodId) {
+  return (state.portions || []).filter((portion) => portion.foodId === foodId);
+}
+
+export function buildEntryItem(food, portion, gramsOverride) {
+  const grams = Number(gramsOverride || portion?.grams || 0);
+  return {
+    foodId: food.id,
+    portionId: portion?.id || "",
+    label: portion?.label || `${grams}g`,
+    grams,
+    nutrition: calculateItemNutrition(food, grams)
+  };
+}

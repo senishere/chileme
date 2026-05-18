@@ -1,9 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildEntryItem,
   calculateItemNutrition,
   createDefaultState,
   dateKey,
+  findFood,
+  findPortion,
+  portionsForFood,
   summarizeDay,
   sevenDayStats
 } from "../src/domain.js";
@@ -112,4 +116,20 @@ test("builds seven days of stats ending on the selected date", () => {
 
 test("formats local dates as yyyy-mm-dd", () => {
   assert.equal(dateKey(new Date(2026, 4, 18, 9, 5)), "2026-05-18");
+});
+
+test("finds foods and portions and builds an entry item", () => {
+  const state = createDefaultState();
+  const food = findFood(state, "food_rice");
+  const portion = findPortion(state, "portion_rice_fist");
+
+  assert.equal(food.name, "米饭");
+  assert.equal(portionsForFood(state, "food_rice").length, 1);
+  assert.deepEqual(buildEntryItem(food, portion), {
+    foodId: "food_rice",
+    portionId: "portion_rice_fist",
+    label: "1拳",
+    grams: 150,
+    nutrition: { calories: 174, protein: 3.9, carbs: 38.85, fat: 0.45 }
+  });
 });
