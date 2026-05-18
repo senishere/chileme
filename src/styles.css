@@ -539,30 +539,6 @@ h1 {
   font-weight: 800;
 }
 
-.trend-summary {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.trend-summary article {
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-  padding: 9px;
-}
-
-.trend-summary strong,
-.trend-summary span {
-  display: block;
-}
-
-.trend-summary span {
-  color: var(--muted);
-  font-size: 12px;
-}
-
 .trend-bars {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(8px, 1fr));

@@ -158,12 +158,12 @@ function renderStructure(day) {
   const metrics = dailyStructure(state, day);
   const rows = Object.entries(metrics).map(([key, metric]) => {
     const progress = Math.min(100, Math.round((metric.ratio || 0) * 100));
-    const digits = key === "calories" || key === "sodium" || key === "waterMl" ? 0 : 1;
+    const ratioLabel = `${Math.round((metric.ratio || 0) * 100)}%`;
     return `
       <article class="structure-row ${escapeAttr(metric.status)}">
         <div>
           <strong>${escapeHtml(metric.label)}</strong>
-          <span>${formatNumber(metric.value, digits)} / ${formatNumber(metric.target, digits)} ${escapeHtml(metric.unit)}</span>
+          <span>达成 ${escapeHtml(ratioLabel)}</span>
         </div>
         <div class="structure-track" aria-hidden="true"><span style="width: ${progress}%"></span></div>
         <em>${escapeHtml(statusLabel(metric.status))}</em>
@@ -307,7 +307,6 @@ function renderFoods() {
 function renderStats() {
   const stats = trendStats(state, dateKey(), statsDays);
   const maxCalories = Math.max(1, ...stats.map((day) => day.calories));
-  const average = (key) => stats.reduce((sum, day) => sum + (Number(day[key]) || 0), 0) / stats.length;
   const bars = stats.map((day) => `
     <article class="trend-day" title="${escapeAttr(day.date)}">
       <span style="height: ${Math.max(4, Math.round((day.calories / maxCalories) * 100))}%"></span>
@@ -321,11 +320,6 @@ function renderStats() {
       <div class="segmented">
         <button class="${statsDays === 7 ? "active" : ""}" type="button" data-action="set-stats-range" data-days="7">最近一周</button>
         <button class="${statsDays === 30 ? "active" : ""}" type="button" data-action="set-stats-range" data-days="30">最近一月</button>
-      </div>
-      <div class="trend-summary">
-        <article><strong>${formatNumber(average("calories"))}</strong><span>日均 kcal</span></article>
-        <article><strong>${formatNumber(average("protein"), 1)}g</strong><span>日均蛋白</span></article>
-        <article><strong>${formatNumber(average("waterMl") / 1000, 1)}L</strong><span>日均饮水</span></article>
       </div>
       <div class="trend-bars" aria-label="热量趋势">${bars}</div>
     </section>

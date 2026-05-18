@@ -94,8 +94,12 @@ test("category manager supports selecting default category icons", () => {
 
 test("today structure labels severe low status as serious shortage", () => {
   const app = readText("../src/app.js");
+  const structureBlock = app.match(/function renderStructure\([\s\S]*?function renderToday/)?.[0] || "";
 
   assert.match(app, /status === "severe-low"\)\s+return "严重不足"/);
+  assert.ok(structureBlock);
+  assert.match(structureBlock, /metric\.ratio/);
+  assert.doesNotMatch(structureBlock, /metric\.value[\s\S]*metric\.target/);
 });
 
 test("timeline source does not render sodium", () => {
@@ -114,5 +118,6 @@ test("stats source renders trend tabs without daily sodium rows", () => {
   assert.match(statsBlock, /最近一周/);
   assert.match(statsBlock, /最近一月/);
   assert.match(statsBlock, /trendStats/);
+  assert.doesNotMatch(statsBlock, /trend-summary|average\(/);
   assert.doesNotMatch(statsBlock, /day\.sodium/);
 });
