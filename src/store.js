@@ -75,17 +75,35 @@ function normalizeNutrition(nutrition) {
     calories: nonNegativeFiniteNumber(nutrition.calories, 0),
     protein: nonNegativeFiniteNumber(nutrition.protein, 0),
     carbs: nonNegativeFiniteNumber(nutrition.carbs, 0),
-    fat: nonNegativeFiniteNumber(nutrition.fat, 0)
+    fat: nonNegativeFiniteNumber(nutrition.fat, 0),
+    sodium: nonNegativeFiniteNumber(nutrition.sodium, 0)
   };
 }
 
 function isValidNutrition(nutrition) {
   if (!nutrition || typeof nutrition !== "object") return false;
-  return ["calories", "protein", "carbs", "fat"].every((key) => (
+  const baseValid = ["calories", "protein", "carbs", "fat"].every((key) => (
     typeof nutrition[key] === "number"
       && Number.isFinite(nutrition[key])
       && nutrition[key] >= 0
   ));
+  const sodiumValid = nutrition.sodium === undefined || (
+    typeof nutrition.sodium === "number"
+      && Number.isFinite(nutrition.sodium)
+      && nutrition.sodium >= 0
+  );
+  return baseValid && sodiumValid;
+}
+
+function mergeById(primary, defaults) {
+  const seen = new Set();
+  const merged = [];
+  for (const item of [...primary, ...defaults]) {
+    if (!item?.id || seen.has(item.id)) continue;
+    seen.add(item.id);
+    merged.push(item);
+  }
+  return merged;
 }
 
 function normalizeFoods(foods, defaults) {
@@ -101,7 +119,7 @@ function normalizeFoods(foods, defaults) {
       !id
       || !name
       || (kind !== "regular" && kind !== "packaged")
-      || !["per100g", "perServing", "perPackage"].includes(nutritionMode)
+      || !["per100g", "per100ml", "perServing", "perPackage"].includes(nutritionMode)
       || !isValidNutrition(food.nutrition)
     ) {
       return [];
@@ -119,7 +137,8 @@ function normalizeFoods(foods, defaults) {
         : "🍽️",
       image: normalizeDataUrl(food.image),
       nutritionMode,
-      nutrition: { ...food.nutrition },
+      densityGPerMl: normalizePositiveNumber(food.densityGPerMl, 1),
+      nutrition: normalizeNutrition(food.nutrition),
       defaultPortionId: typeof food.defaultPortionId === "string"
         ? food.defaultPortionId.trim()
         : "",
@@ -134,7 +153,7 @@ function normalizeFoods(foods, defaults) {
     return [normalized];
   });
 
-  return validFoods.length > 0 ? validFoods : defaults.foods;
+  return validFoods.length > 0 ? mergeById(validFoods, defaults.foods) : defaults.foods;
 }
 
 function normalizePortions(portions, defaults) {
@@ -145,12 +164,16 @@ function normalizePortions(portions, defaults) {
     const id = typeof portion.id === "string" ? portion.id.trim() : "";
     const foodId = typeof portion.foodId === "string" ? portion.foodId.trim() : "";
     const label = typeof portion.label === "string" ? portion.label.trim() : "";
-    const grams = normalizePositiveNumber(portion.grams, NaN);
-    if (!id || !foodId || !label || !Number.isFinite(grams)) return [];
-    return [{ id, foodId, label, grams }];
+    const unit = portion.unit === "ml" ? "ml" : "g";
+    const amount = normalizePositiveNumber(portion.amount, normalizePositiveNumber(portion.grams, NaN));
+    const grams = unit === "ml"
+      ? normalizePositiveNumber(portion.grams, amount)
+      : amount;
+    if (!id || !foodId || !label || !Number.isFinite(amount) || !Number.isFinite(grams)) return [];
+    return [{ id, foodId, label, amount, unit, grams }];
   });
 
-  return validPortions.length > 0 ? validPortions : defaults.portions;
+  return validPortions.length > 0 ? mergeById(validPortions, defaults.portions) : defaults.portions;
 }
 
 function dataUrlBytes(value) {
@@ -168,18 +191,24 @@ function normalizeEntryItems(items) {
   return items.flatMap((item) => {
     if (!item || typeof item !== "object") return [];
     const foodId = typeof item.foodId === "string" ? item.foodId.trim() : "";
-    const grams = positiveFiniteNumber(item.grams, NaN);
-    if (!foodId || !Number.isFinite(grams)) return [];
+    const unit = item.unit === "ml" ? "ml" : "g";
+    const amount = positiveFiniteNumber(item.amount, positiveFiniteNumber(item.grams, NaN));
+    const grams = unit === "ml"
+      ? positiveFiniteNumber(item.grams, amount)
+      : amount;
+    if (!foodId || !Number.isFinite(amount) || !Number.isFinite(grams)) return [];
 
     const portionId = typeof item.portionId === "string" ? item.portionId : "";
     const label = typeof item.label === "string" && item.label.trim()
       ? item.label
-      : `${grams}g`;
+      : `${amount}${unit}`;
 
     return [{
       foodId,
       portionId,
       label,
+      amount,
+      unit,
       grams,
       nutrition: normalizeNutrition(item.nutrition)
     }];

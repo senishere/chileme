@@ -237,6 +237,11 @@ h1 {
   padding: 9px;
 }
 
+.timeline-card > div,
+.food-row > div {
+  min-width: 0;
+}
+
 .entry-thumb {
   width: 54px;
   height: 54px;
@@ -259,6 +264,7 @@ h1 {
   margin: 0;
   color: var(--muted);
   font-size: 12px;
+  line-height: 1.35;
 }
 
 .icon-button {

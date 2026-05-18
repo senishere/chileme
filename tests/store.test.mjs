@@ -67,7 +67,7 @@ test("normalizes partial imported state", () => {
       name: "自定义",
       kind: "regular",
       nutritionMode: "per100g",
-      nutrition: { calories: 100, protein: 5, carbs: 12, fat: 2 }
+      nutrition: { calories: 100, protein: 5, carbs: 12, fat: 2, sodium: 20 }
     }]
   });
 
@@ -101,7 +101,7 @@ test("normalizes mixed food and portion arrays by dropping invalid records", () 
         nutritionMode: "perServing",
         servingGrams: 0,
         packageGrams: "bad",
-        nutrition: { calories: 180, protein: 24, carbs: 3, fat: 6 },
+        nutrition: { calories: 180, protein: 24, carbs: 3, fat: 6, sodium: 300 },
         defaultPortionId: " custom_portion ",
         quickAdd: false
       },
@@ -110,25 +110,25 @@ test("normalizes mixed food and portion arrays by dropping invalid records", () 
         name: "坏类型",
         kind: "raw",
         nutritionMode: "per100g",
-        nutrition: { calories: 1, protein: 1, carbs: 1, fat: 1 }
+        nutrition: { calories: 1, protein: 1, carbs: 1, fat: 1, sodium: 1 }
       },
       {
         id: "bad_nutrition",
         name: "坏营养",
         kind: "regular",
         nutritionMode: "per100g",
-        nutrition: { calories: -1, protein: 1, carbs: 1, fat: 1 }
+        nutrition: { calories: -1, protein: 1, carbs: 1, fat: 1, sodium: 1 }
       }
     ],
     portions: [
       null,
-      { id: " custom_portion ", foodId: " custom_food ", label: " 1盒 ", grams: "125" },
+      { id: " custom_portion ", foodId: " custom_food ", label: " 1盒 ", amount: "125", unit: "g", grams: "125" },
       { id: "", foodId: "custom_food", label: "空 ID", grams: 100 },
       { id: "bad_grams", foodId: "custom_food", label: "坏克数", grams: 0 }
     ]
   });
 
-  assert.deepEqual(normalized.foods, [{
+  assert.deepEqual(normalized.foods[0], {
     id: "custom_food",
     name: "自定义鸡肉",
     category: "自定义",
@@ -136,15 +136,23 @@ test("normalizes mixed food and portion arrays by dropping invalid records", () 
     emoji: "🍱",
     image: "",
     nutritionMode: "perServing",
+    densityGPerMl: 1,
     servingGrams: 100,
     packageGrams: 100,
-    nutrition: { calories: 180, protein: 24, carbs: 3, fat: 6 },
+    nutrition: { calories: 180, protein: 24, carbs: 3, fat: 6, sodium: 300 },
     defaultPortionId: "custom_portion",
     quickAdd: false
-  }]);
-  assert.deepEqual(normalized.portions, [
-    { id: "custom_portion", foodId: "custom_food", label: "1盒", grams: 125 }
-  ]);
+  });
+  assert.ok(normalized.foods.find((food) => food.id === "food_rice"));
+  assert.deepEqual(normalized.portions[0], {
+    id: "custom_portion",
+    foodId: "custom_food",
+    label: "1盒",
+    amount: 125,
+    unit: "g",
+    grams: 125
+  });
+  assert.ok(normalized.portions.find((portion) => portion.id === "portion_rice_fist"));
 });
 
 test("normalizes malformed entries and water entries", () => {
@@ -159,7 +167,7 @@ test("normalizes malformed entries and water entries", () => {
             portionId: "portion_rice_fist",
             label: 123,
             grams: "150",
-            nutrition: { calories: "174", protein: 3.9, carbs: null, fat: -1 }
+            nutrition: { calories: "174", protein: 3.9, carbs: null, fat: -1, sodium: "2" }
           },
           {
             foodId: "food_bad",
@@ -197,8 +205,10 @@ test("normalizes malformed entries and water entries", () => {
           foodId: "food_rice",
           portionId: "portion_rice_fist",
           label: "150g",
+          amount: 150,
+          unit: "g",
           grams: 150,
-          nutrition: { calories: 174, protein: 3.9, carbs: 0, fat: 0 }
+          nutrition: { calories: 174, protein: 3.9, carbs: 0, fat: 0, sodium: 2 }
         }
       ],
       note: "",
@@ -311,6 +321,66 @@ test("preserves unset daily goals through save and load", () => {
     protein: null,
     waterMl: 1800
   });
+});
+
+test("normalizes legacy nutrition and portions with sodium and units", () => {
+  const normalized = normalizeState({
+    foods: [{
+      id: "legacy_food",
+      name: "旧食物",
+      kind: "regular",
+      nutritionMode: "per100g",
+      nutrition: { calories: 88, protein: 3, carbs: 12, fat: 2 }
+    }],
+    portions: [{
+      id: "legacy_portion",
+      foodId: "legacy_food",
+      label: "旧份量",
+      grams: 80
+    }]
+  });
+
+  const food = normalized.foods.find((item) => item.id === "legacy_food");
+  const portion = normalized.portions.find((item) => item.id === "legacy_portion");
+
+  assert.deepEqual(food.nutrition, { calories: 88, protein: 3, carbs: 12, fat: 2, sodium: 0 });
+  assert.deepEqual(portion, {
+    id: "legacy_portion",
+    foodId: "legacy_food",
+    label: "旧份量",
+    amount: 80,
+    unit: "g",
+    grams: 80
+  });
+});
+
+test("merges missing built-in foods without overriding user foods", () => {
+  const normalized = normalizeState({
+    foods: [{
+      id: "food_milk",
+      name: "我的牛奶",
+      category: "自定义",
+      kind: "regular",
+      nutritionMode: "per100ml",
+      densityGPerMl: 1,
+      nutrition: { calories: 10, protein: 1, carbs: 1, fat: 1, sodium: 1 },
+      defaultPortionId: "custom_milk_portion",
+      quickAdd: false
+    }],
+    portions: [{
+      id: "custom_milk_portion",
+      foodId: "food_milk",
+      label: "我的杯",
+      amount: 123,
+      unit: "ml",
+      grams: 123
+    }]
+  });
+
+  assert.equal(normalized.foods.find((food) => food.id === "food_milk").name, "我的牛奶");
+  assert.ok(normalized.foods.find((food) => food.id === "food_soy_milk"));
+  assert.ok(normalized.portions.find((portion) => portion.id === "custom_milk_portion"));
+  assert.ok(normalized.portions.find((portion) => portion.id === "portion_soy_milk_cup"));
 });
 
 test("rejects nonnumeric JSON values for positive numbers", () => {
