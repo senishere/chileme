@@ -129,24 +129,38 @@ test("category manager supports selecting default category icons", () => {
   assert.match(app, /addCategory\(state, data\.get\("categoryName"\), data\.get\("icon"\)\)/);
 });
 
-test("food list metadata uses compact chips instead of one wrapping hint line", () => {
+test("food list rows omit metadata chips for stable compact height", () => {
   const app = readText("../src/app.js");
   const css = readText("../src/styles.css");
   const foodRowsBlock = app.match(/function renderFoodRows\(\) \{[\s\S]*?function renderFoods/)?.[0] || "";
 
   assert.ok(foodRowsBlock);
-  assert.match(foodRowsBlock, /food-meta/);
-  assert.match(foodRowsBlock, /food-meta-chip/);
-  assert.match(css, /\.food-meta/);
-  assert.match(css, /\.food-meta-chip/);
+  assert.doesNotMatch(foodRowsBlock, /food-meta/);
+  assert.doesNotMatch(foodRowsBlock, /kcal\/100g/);
+  assert.match(css, /\.food-row \{[\s\S]*min-height: 58px/);
   assert.doesNotMatch(foodRowsBlock, /<br><span class="hint">\$\{escapeHtml\(food\.category\)\} · \$\{calories\} kcal\/100g/);
 });
 
 test("food icon picker centers emoji within each button", () => {
   const css = readText("../src/styles.css");
 
-  assert.match(css, /\.icon-picker button \{[\s\S]*display: grid/);
-  assert.match(css, /\.icon-picker button \{[\s\S]*place-items: center/);
+  assert.match(css, /\.icon-picker button \{[\s\S]*display: flex/);
+  assert.match(css, /\.icon-picker button \{[\s\S]*align-items: center/);
+  assert.match(css, /\.icon-picker button \{[\s\S]*justify-content: center/);
+  assert.match(css, /\.icon-picker button \{[\s\S]*line-height: 1/);
+  assert.match(css, /\.icon-picker button \{[\s\S]*padding: 0/);
+});
+
+test("water can be recorded as a water entry from the food flow", () => {
+  const app = readText("../src/app.js");
+  const timelineBlock = app.match(/function renderTimeline\([\s\S]*?function renderToday/)?.[0] || "";
+  const submitBlock = app.match(/async function handleEntrySubmit\(form\) \{[\s\S]*?async function handleFoodSubmit/)?.[0] || "";
+
+  assert.match(app, /function isWaterFood\(food\)/);
+  assert.match(submitBlock, /state\.waterEntries\.push/);
+  assert.match(submitBlock, /createId\("water"\)/);
+  assert.match(timelineBlock, /state\.waterEntries/);
+  assert.match(timelineBlock, /data-action="delete-water"/);
 });
 
 test("app install icon uses a rice emoji mark", () => {

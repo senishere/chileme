@@ -94,6 +94,10 @@ function foodLabel(food) {
   return food?.name || "未知食物";
 }
 
+function isWaterFood(food) {
+  return food?.id === "food_water" || food?.category === "水";
+}
+
 function amountLabel(amount, unit = "g", digits = 1) {
   const safeUnit = unit === "ml" ? "ml" : "g";
   const safeDigits = safeUnit === "ml" ? 0 : digits;
@@ -223,9 +227,14 @@ function renderQuickAdd() {
 function renderTimeline(day) {
   const entries = state.entries
     .filter((entry) => dateKey(entry.timestamp) === day)
+    .map((entry) => ({ type: "food", timestamp: entry.timestamp, entry }));
+  const waterEntries = state.waterEntries
+    .filter((entry) => dateKey(entry.timestamp) === day)
+    .map((entry) => ({ type: "water", timestamp: entry.timestamp, entry }));
+  const records = [...entries, ...waterEntries]
     .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
-  if (!entries.length) {
+  if (!records.length) {
     return `
       <section class="panel">
         <div class="section-head"><h2>今日记录</h2><span class="hint">上下滚动</span></div>
@@ -234,7 +243,23 @@ function renderTimeline(day) {
     `;
   }
 
-  const rows = entries.map((entry) => {
+  const rows = records.map((record) => {
+    if (record.type === "water") {
+      const water = record.entry;
+      return `
+        <article class="timeline-card">
+          <span class="entry-thumb">💧</span>
+          <div>
+            <p class="entry-title">${escapeHtml(formatTime(water.timestamp))} 饮水</p>
+            <p class="entry-meta">${amountLabel(water.milliliters, "ml")}</p>
+          </div>
+          <div class="entry-actions">
+            <button class="icon-button" type="button" aria-label="删除饮水" data-action="delete-water" data-water-id="${escapeAttr(water.id)}">×</button>
+          </div>
+        </article>
+      `;
+    }
+    const entry = record.entry;
     const firstItem = entry.items[0];
     const firstFood = findFood(state, firstItem?.foodId);
     const title = entry.items.map((item) => foodLabel(findFood(state, item.foodId))).join(" + ");
@@ -278,16 +303,11 @@ function renderFoodRows() {
   if (!foods.length) return `<div class="empty">没有匹配的食物</div>`;
 
   return foods.map((food) => {
-    const calories = formatNumber(food.nutritionPer100g?.calories || 0);
     const favoriteLabel = food.quickAdd === false ? "常用" : "取消";
     return `
       <article class="food-row">
         <div class="food-main">
           <strong>${escapeHtml(food.icon || "🍽️")} ${escapeHtml(food.name)}</strong>
-          <span class="food-meta">
-            <span class="food-meta-chip">${escapeHtml(food.category)}</span>
-            <span class="food-meta-chip">${calories} kcal/100g</span>
-          </span>
         </div>
         <div class="food-actions">
           <button class="button secondary compact" type="button" data-action="toggle-favorite" data-food-id="${escapeAttr(food.id)}">${favoriteLabel}</button>
@@ -672,17 +692,30 @@ async function handleEntrySubmit(form) {
 
   const image = await readImage(form.photo.files[0]);
   const photo = image.dataUrl || entryDraft.photo || "";
+  const timestamp = entryDraft.timestamp || new Date().toISOString();
+  const waterItems = entryDraft.items.filter((item) => isWaterFood(findFood(state, item.foodId)));
+  const foodItems = entryDraft.items.filter((item) => !isWaterFood(findFood(state, item.foodId)));
+  for (const item of waterItems) {
+    state.waterEntries.push({
+      id: createId("water"),
+      timestamp,
+      milliliters: positiveFiniteNumber(item.amount, positiveFiniteNumber(item.grams, 0))
+    });
+  }
+
   const entry = {
     id: entryDraft.entryId || createId("entry"),
-    timestamp: entryDraft.timestamp || new Date().toISOString(),
-    items: cloneEntryItems(entryDraft.items),
+    timestamp,
+    items: cloneEntryItems(foodItems),
     note: entryDraft.note,
     photo
   };
 
-  if (entryDraft.entryId) {
+  if (entryDraft.entryId && foodItems.length) {
     state.entries = state.entries.map((existing) => existing.id === entryDraft.entryId ? entry : existing);
-  } else {
+  } else if (entryDraft.entryId) {
+    state.entries = state.entries.filter((existing) => existing.id !== entryDraft.entryId);
+  } else if (foodItems.length) {
     state.entries.push(entry);
   }
 
@@ -879,6 +912,10 @@ document.addEventListener("click", (event) => {
   }
   if (action === "delete-entry") {
     state.entries = state.entries.filter((entry) => entry.id !== target.dataset.entryId);
+    saveAndRender();
+  }
+  if (action === "delete-water") {
+    state.waterEntries = state.waterEntries.filter((entry) => entry.id !== target.dataset.waterId);
     saveAndRender();
   }
   if (action === "export") exportJson();

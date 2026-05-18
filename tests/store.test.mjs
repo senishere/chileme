@@ -380,6 +380,25 @@ test("saves and reloads simplified state", () => {
   assert.equal("calibration" in loaded, false);
 });
 
+test("saves and reloads user edits to built-in food names", () => {
+  const storage = memoryStorage();
+  const store = createStore(storage);
+  const state = createDefaultState();
+  state.foods = state.foods.map((food) => {
+    if (food.id === "food_salmon") return { ...food, name: "鱼" };
+    if (food.id === "food_chicken") return { ...food, name: "鸡肉" };
+    if (food.id === "food_shrimp") return { ...food, name: "虾" };
+    return food;
+  });
+
+  store.save(state);
+
+  const loaded = createStore(storage).load();
+  assert.equal(loaded.foods.find((food) => food.id === "food_salmon").name, "鱼");
+  assert.equal(loaded.foods.find((food) => food.id === "food_chicken").name, "鸡肉");
+  assert.equal(loaded.foods.find((food) => food.id === "food_shrimp").name, "虾");
+});
+
 test("save retries without entry photos when storage quota rejects the full state", () => {
   const storage = memoryStorage();
   let attempts = 0;

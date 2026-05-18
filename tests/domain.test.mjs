@@ -164,7 +164,16 @@ test("default foods use simplified categories and icon fields", () => {
   assert.equal(Array.isArray(state.portions), false);
   assert.ok(state.categories.find((category) => category.name === "细粮"));
   assert.ok(state.categories.find((category) => category.name === "零食"));
+  assert.ok(state.categories.find((category) => category.name === "水"));
   assert.equal(findFood(state, "food_rice").category, "细粮");
+  assert.equal(findFood(state, "food_water").category, "水");
+  assert.deepEqual(findFood(state, "food_water").nutritionPer100g, {
+    calories: 0,
+    protein: 0,
+    carbs: 0,
+    fat: 0,
+    sodium: 0
+  });
   assert.equal(typeof findFood(state, "food_rice").icon, "string");
   assert.equal(typeof findFood(state, "food_rice").nutritionPer100g.calories, "number");
 });
