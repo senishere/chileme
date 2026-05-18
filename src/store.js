@@ -2,11 +2,28 @@ import { createDefaultState } from "./domain.js";
 
 export const STORAGE_KEY = "chileme.state.v1";
 
-function normalizeNumber(value, fallback) {
+function normalizePositiveNumber(value, fallback) {
   const number = typeof value === "string" && value.trim() === ""
     ? NaN
     : Number(value);
-  return Number.isFinite(number) ? number : fallback;
+  return Number.isFinite(number) && number > 0 ? number : fallback;
+}
+
+function normalizeContainers(containers, defaults) {
+  if (!Array.isArray(containers)) return defaults.calibration.containers;
+
+  const validContainers = containers.flatMap((container) => {
+    if (!container || typeof container !== "object") return [];
+    const id = typeof container.id === "string" ? container.id.trim() : "";
+    const label = typeof container.label === "string" ? container.label.trim() : "";
+    const capacityMl = normalizePositiveNumber(container.capacityMl, NaN);
+    if (!id || !label || !Number.isFinite(capacityMl)) return [];
+    return [{ id, label, capacityMl }];
+  });
+
+  return validContainers.length > 0
+    ? validContainers
+    : defaults.calibration.containers;
 }
 
 function normalizeCalibration(calibration, defaults) {
@@ -14,12 +31,10 @@ function normalizeCalibration(calibration, defaults) {
 
   return {
     ...defaults.calibration,
-    fistWidthCm: normalizeNumber(calibration.fistWidthCm, defaults.calibration.fistWidthCm),
-    palmWidthCm: normalizeNumber(calibration.palmWidthCm, defaults.calibration.palmWidthCm),
-    fingerWidthCm: normalizeNumber(calibration.fingerWidthCm, defaults.calibration.fingerWidthCm),
-    containers: Array.isArray(calibration.containers)
-      ? calibration.containers
-      : defaults.calibration.containers
+    fistWidthCm: normalizePositiveNumber(calibration.fistWidthCm, defaults.calibration.fistWidthCm),
+    palmWidthCm: normalizePositiveNumber(calibration.palmWidthCm, defaults.calibration.palmWidthCm),
+    fingerWidthCm: normalizePositiveNumber(calibration.fingerWidthCm, defaults.calibration.fingerWidthCm),
+    containers: normalizeContainers(calibration.containers, defaults)
   };
 }
 
@@ -28,9 +43,9 @@ function normalizeDailyGoal(dailyGoal, defaults) {
 
   return {
     ...defaults.dailyGoal,
-    calories: normalizeNumber(dailyGoal.calories, defaults.dailyGoal.calories),
-    protein: normalizeNumber(dailyGoal.protein, defaults.dailyGoal.protein),
-    waterMl: normalizeNumber(dailyGoal.waterMl, defaults.dailyGoal.waterMl)
+    calories: normalizePositiveNumber(dailyGoal.calories, defaults.dailyGoal.calories),
+    protein: normalizePositiveNumber(dailyGoal.protein, defaults.dailyGoal.protein),
+    waterMl: normalizePositiveNumber(dailyGoal.waterMl, defaults.dailyGoal.waterMl)
   };
 }
 

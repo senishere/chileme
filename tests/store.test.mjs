@@ -93,6 +93,53 @@ test("normalizes invalid calibration and goal leaf values", () => {
   assert.equal(normalized.dailyGoal.waterMl, 2300);
 });
 
+test("normalizes malformed calibration containers", () => {
+  const defaults = createDefaultState();
+  const normalized = normalizeState({
+    calibration: {
+      containers: [
+        { id: "", label: "", capacityMl: "huge" },
+        { id: "container_valid", label: "水杯", capacityMl: "250" }
+      ]
+    }
+  });
+
+  assert.deepEqual(normalized.calibration.containers, [
+    { id: "container_valid", label: "水杯", capacityMl: 250 }
+  ]);
+
+  const fallback = normalizeState({
+    calibration: {
+      containers: [{ id: "", label: "", capacityMl: "huge" }]
+    }
+  });
+
+  assert.deepEqual(fallback.calibration.containers, defaults.calibration.containers);
+});
+
+test("normalizes non-positive calibration and goal numbers", () => {
+  const defaults = createDefaultState();
+  const normalized = normalizeState({
+    calibration: {
+      fistWidthCm: 0,
+      palmWidthCm: -1,
+      fingerWidthCm: "2.2"
+    },
+    dailyGoal: {
+      calories: -2000,
+      protein: 0,
+      waterMl: "2100"
+    }
+  });
+
+  assert.equal(normalized.calibration.fistWidthCm, defaults.calibration.fistWidthCm);
+  assert.equal(normalized.calibration.palmWidthCm, defaults.calibration.palmWidthCm);
+  assert.equal(normalized.calibration.fingerWidthCm, 2.2);
+  assert.equal(normalized.dailyGoal.calories, defaults.dailyGoal.calories);
+  assert.equal(normalized.dailyGoal.protein, defaults.dailyGoal.protein);
+  assert.equal(normalized.dailyGoal.waterMl, 2100);
+});
+
 test("exports and imports JSON state", () => {
   const state = createDefaultState();
   state.entries.push({
