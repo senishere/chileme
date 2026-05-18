@@ -5,7 +5,7 @@
 ## 当前版本
 
 - 应用名称：吃了么
-- 分支：`main`
+- 当前功能分支：`feature/unit-simplification`
 - 代码状态：以 `git log --oneline -3` 和 `git status --short` 为准
 - 本地目录：`/Users/sen/projects/chileme`
 - 手机测试地址：`http://192.168.0.104:4173/`
@@ -24,18 +24,18 @@
 - 食物页支持分类筛选、搜索、常用标记、分类管理、图标选择和编辑现有食物。
 - 设置页支持导出最近 7 天或 30 天记录明细为 CSV/JSON。
 - 今日页支持按个人资料和目标显示粗略饮食结构状态：严重不足、不足、正常范围、偏高或超量。
-- 内置常见细粮、粗粮、动物蛋白、植物蛋白、奶、饮料、坚果、零食、蔬果和餐食。
+- 内置常见细粮、粗粮、动物蛋白、植物蛋白、奶、饮料、坚果、零食、蔬菜、水果和餐食。
 - 旧数据升级时会迁移食物分类、每 100g 营养、单位和缺失的内置食物；用户已有同 id 食物不会被覆盖。
 
 ## 本轮验证
 
-- `npm test`：待本轮收尾重跑
-- `TZ=America/Los_Angeles npm test`：待本轮收尾重跑
-- `node --check src/app.js`
-- `node --check sw.js`
-- `node --check src/domain.js`
-- `node --check src/store.js`
-- `git diff --check`
+- `npm test`：44/44 通过
+- `TZ=America/Los_Angeles npm test`：44/44 通过
+- `node --check src/app.js`：通过
+- `node --check sw.js`：通过
+- `node --check src/domain.js`：通过
+- `node --check src/store.js`：通过
+- `git diff --check`：通过
 - 本地 HTTP smoke：`index.html`、`src/app.js`、`sw.js`、`manifest.webmanifest`
 - Chrome headless 渲染首页，确认今日结构、分类筛选和快捷添加出现在 DOM 中。
 
@@ -60,7 +60,7 @@
    - 食物页已支持分类筛选、搜索、标记常用或取消常用。
    - 分类支持新增、重命名、删除；删除分类会把食物迁移到“其他”。
 
-3. 自定义食物与包装食品录入
+3. 自定义食物录入
    - 新增/编辑食物共用同一表单。
    - 已统一为每 `100g` 营养录入。
    - 已支持食物分类、图标、图片、热量、蛋白质、碳水、脂肪、钠含量。
@@ -69,7 +69,7 @@
 4. 周/月饮食记录导出
    - 已支持导出最近 7 天和最近 30 天饮食记录。
    - 已支持 CSV 和 JSON。
-   - 导出内容包含日期时间、食物、份量、单位、热量、蛋白质、碳水、脂肪、钠、饮水、备注；不包含照片。
+   - 导出内容包含日期时间、食物、数量、单位、热量、蛋白质、碳水、脂肪、钠、饮水、备注；不包含照片。
 
 5. 每日饮食结构缺口/过量图示
    - 已增加个人基础资料：性别、年龄、身高、体重、活动水平、目标（维持/减脂/增肌）。
