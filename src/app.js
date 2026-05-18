@@ -106,6 +106,7 @@ function renderQuickAdd() {
       <div class="quick-rail">${cards || `<div class="empty">添加第一个常吃食物</div>`}</div>
       <div class="actions-row">
         <button class="button secondary" type="button" data-action="show-foods">搜索/更多</button>
+        <button class="button secondary" type="button" data-action="add-water">+ 300ml</button>
         <button class="button" type="button" data-action="open-entry">+ 自定义</button>
       </div>
     </section>
@@ -427,6 +428,14 @@ document.addEventListener("click", (event) => {
     currentView = "foods";
     render();
   }
+  if (action === "add-water") {
+    state.waterEntries.push({
+      id: createId("water"),
+      timestamp: new Date().toISOString(),
+      milliliters: 300
+    });
+    saveAndRender();
+  }
   if (action === "open-food-form") openFoodForm();
   if (action === "close-modal") closeModal();
   if (action === "delete-entry") {
@@ -480,6 +489,7 @@ document.addEventListener("submit", async (event) => {
       ]
     };
     saveAndRender();
+    alert("设置已保存");
   }
 });
 

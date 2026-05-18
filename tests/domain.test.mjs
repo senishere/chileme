@@ -88,6 +88,17 @@ test("summarizes entries and water for one local day", () => {
   });
 });
 
+test("summarizes multiple water entries for a day", () => {
+  const state = createDefaultState();
+  state.waterEntries = [
+    { id: "water_a", timestamp: new Date(2026, 4, 18, 9, 0).toISOString(), milliliters: 250 },
+    { id: "water_b", timestamp: new Date(2026, 4, 18, 13, 0).toISOString(), milliliters: 500 },
+    { id: "water_c", timestamp: new Date(2026, 4, 17, 13, 0).toISOString(), milliliters: 500 }
+  ];
+
+  assert.equal(summarizeDay(state, dateKey(new Date(2026, 4, 18, 12, 0))).waterMl, 750);
+});
+
 test("builds seven days of stats ending on the selected date", () => {
   const state = createDefaultState();
   state.entries = [

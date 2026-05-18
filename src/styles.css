@@ -372,3 +372,21 @@ h1 {
     box-shadow: 0 20px 80px rgba(40, 35, 25, 0.18);
   }
 }
+
+@media (max-width: 360px) {
+  .actions-row {
+    flex-wrap: wrap;
+  }
+
+  .actions-row .button {
+    flex: 1 1 120px;
+  }
+
+  .summary-grid {
+    gap: 6px;
+  }
+
+  .metric-card {
+    padding: 8px;
+  }
+}
