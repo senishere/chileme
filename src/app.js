@@ -4,6 +4,7 @@ import {
   buildEntryItem,
   createId,
   dateKey,
+  defaultIconForCategory,
   deleteCategory,
   dailyStructure,
   exportLogRows,
@@ -482,7 +483,7 @@ function openFoodForm(foodId = "") {
   const title = existingFood ? "编辑食物" : "新增食物";
   const nutrition = existingFood?.nutritionPer100g || {};
   const category = existingFood?.category || state.categories[0]?.name || "其他";
-  const icon = existingFood?.icon || ICON_OPTIONS[category]?.[0] || "🍽️";
+  const icon = defaultIconForCategory(category, existingFood?.icon);
 
   modalRoot.hidden = false;
   modalRoot.innerHTML = `
@@ -666,11 +667,12 @@ async function handleFoodSubmit(form) {
   const category = state.categories.some((item) => item.name === data.get("category"))
     ? String(data.get("category"))
     : "其他";
+  const icon = String(data.get("icon") || "");
   const food = {
     id: foodId,
     name: String(data.get("name") || "未命名"),
     category,
-    icon: String(data.get("icon") || existingFood?.icon || "🍽️"),
+    icon: defaultIconForCategory(category, icon || existingFood?.icon),
     image: image.dataUrl || existingFood?.image || "",
     nutritionPer100g: {
       calories: nonNegativeFiniteNumber(data.get("calories"), 0),
@@ -870,6 +872,17 @@ document.addEventListener("input", (event) => {
   foodSearchQuery = input.value;
   const results = document.querySelector("#food-results");
   if (results) results.innerHTML = renderFoodRows();
+});
+
+document.addEventListener("change", (event) => {
+  const select = event.target.closest('form[data-action="save-food"] select[name="category"]');
+  if (!select) return;
+  const form = select.closest("form");
+  const icon = defaultIconForCategory(select.value);
+  if (form?.elements.icon) form.elements.icon.value = icon;
+  form?.querySelectorAll('[data-action="select-food-icon"]').forEach((button) => {
+    button.classList.toggle("active", button.dataset.icon === icon);
+  });
 });
 
 document.addEventListener("submit", async (event) => {

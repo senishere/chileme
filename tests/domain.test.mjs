@@ -7,6 +7,7 @@ import {
   cloneState,
   createDefaultState,
   dateKey,
+  defaultIconForCategory,
   deleteCategory,
   dailyStructure,
   estimateDailyTargets,
@@ -194,6 +195,12 @@ test("category helpers add rename delete and move foods to fallback category", (
   assert.throws(() => renameCategory(deleted, "其他", "细粮"), /分类已存在/);
   assert.throws(() => deleteCategory(deleted, "其他"), /不能删除/);
   assert.throws(() => addCategory(deleted, " "), /分类名称/);
+});
+
+test("resolves a category default icon unless an explicit icon is selected", () => {
+  assert.equal(defaultIconForCategory("粗粮"), "🌾");
+  assert.equal(defaultIconForCategory("粗粮", "🍠"), "🍠");
+  assert.equal(defaultIconForCategory("未知"), "🍽️");
 });
 
 test("default state includes a mixed built-in food library", () => {

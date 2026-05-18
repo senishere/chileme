@@ -3,7 +3,8 @@ import {
   ICON_OPTIONS,
   createDefaultState,
   nonNegativeFiniteNumber,
-  positiveFiniteNumber
+  positiveFiniteNumber,
+  roundMetric
 } from "./domain.js";
 
 export const STORAGE_KEY = "chileme.state.v1";
@@ -113,13 +114,17 @@ const LEGACY_CATEGORY_MAP = new Map([
   ["常吃", "其他"]
 ]);
 
-function normalizeCategories(categories, defaults) {
+function isLegacyCategoryName(name) {
+  return LEGACY_CATEGORY_MAP.has(name);
+}
+
+function normalizeCategories(categories, defaults, foods = []) {
   const merged = [];
   const seen = new Set();
   const add = (category, { skipLegacy = false } = {}) => {
     if (!category || typeof category !== "object") return;
     const name = normalizeCategoryName(category.name);
-    if (!name || seen.has(name) || (skipLegacy && LEGACY_CATEGORY_MAP.has(name))) return;
+    if (!name || seen.has(name) || (skipLegacy && isLegacyCategoryName(name))) return;
     seen.add(name);
     merged.push({
       id: normalizeCategoryName(category.id) || `category_${name}`,
@@ -131,6 +136,13 @@ function normalizeCategories(categories, defaults) {
   for (const category of defaults.categories) add(category);
   if (Array.isArray(categories)) {
     for (const category of categories) add(category, { skipLegacy: true });
+  } else if (Array.isArray(foods)) {
+    for (const food of foods) {
+      if (!food || typeof food !== "object") continue;
+      const name = normalizeCategoryName(food.category);
+      if (!name || isLegacyCategoryName(name)) continue;
+      add({ id: `category_${name}`, name, icon: food.icon || food.emoji }, { skipLegacy: true });
+    }
   }
   return merged;
 }
@@ -142,6 +154,32 @@ function normalizeFoodCategory(value, validCategoryNames) {
   return validCategoryNames.has(mapped) ? mapped : "其他";
 }
 
+function scaleNutrition(nutrition, factor) {
+  return {
+    calories: roundMetric((nutrition.calories || 0) * factor),
+    protein: roundMetric((nutrition.protein || 0) * factor),
+    carbs: roundMetric((nutrition.carbs || 0) * factor),
+    fat: roundMetric((nutrition.fat || 0) * factor),
+    sodium: roundMetric((nutrition.sodium || 0) * factor)
+  };
+}
+
+function normalizeFoodNutrition(food) {
+  if (isValidNutrition(food.nutritionPer100g)) return normalizeNutrition(food.nutritionPer100g);
+  if (!isValidNutrition(food.nutrition)) return null;
+
+  const nutrition = normalizeNutrition(food.nutrition);
+  if (food.nutritionMode === "perServing") {
+    const grams = positiveFiniteNumber(food.servingGrams, NaN);
+    return Number.isFinite(grams) ? scaleNutrition(nutrition, 100 / grams) : nutrition;
+  }
+  if (food.nutritionMode === "perPackage") {
+    const grams = positiveFiniteNumber(food.packageGrams, NaN);
+    return Number.isFinite(grams) ? scaleNutrition(nutrition, 100 / grams) : nutrition;
+  }
+  return nutrition;
+}
+
 function normalizeFoods(foods, defaults, categories) {
   if (!Array.isArray(foods)) return defaults.foods;
   const validCategoryNames = new Set(categories.map((category) => category.name));
@@ -150,11 +188,11 @@ function normalizeFoods(foods, defaults, categories) {
     if (!food || typeof food !== "object") return [];
     const id = typeof food.id === "string" ? food.id.trim() : "";
     const name = typeof food.name === "string" ? food.name.trim() : "";
-    const nutrition = food.nutritionPer100g || food.nutrition;
+    const nutrition = normalizeFoodNutrition(food);
     if (
       !id
       || !name
-      || !isValidNutrition(nutrition)
+      || !nutrition
     ) {
       return [];
     }
@@ -166,7 +204,7 @@ function normalizeFoods(foods, defaults, categories) {
       category,
       icon: categoryIcon(category, food.icon || food.emoji),
       image: normalizeDataUrl(food.image),
-      nutritionPer100g: normalizeNutrition(nutrition),
+      nutritionPer100g: nutrition,
       quickAdd: food.quickAdd === false ? false : true
     }];
   });
@@ -245,7 +283,7 @@ function normalizeWaterEntries(waterEntries) {
 export function normalizeState(input) {
   const defaults = createDefaultState();
   const state = input && typeof input === "object" ? input : {};
-  const categories = normalizeCategories(state.categories, defaults);
+  const categories = normalizeCategories(state.categories, defaults, state.foods);
 
   return {
     categories,

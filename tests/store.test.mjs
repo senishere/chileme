@@ -132,6 +132,68 @@ test("maps legacy food categories even when old categories were persisted", () =
   assert.equal(normalized.foods.find((food) => food.id === "custom_breakfast_food").category, "早餐");
 });
 
+test("infers implicit custom categories from legacy food rows", () => {
+  const normalized = normalizeState({
+    foods: [{
+      id: "custom_breakfast_food",
+      name: "早餐组合",
+      category: "早餐",
+      nutrition: { calories: 200, protein: 8, carbs: 30, fat: 5, sodium: 200 }
+    }]
+  });
+
+  assert.ok(normalized.categories.find((category) => category.name === "早餐"));
+  assert.equal(normalized.foods.find((food) => food.id === "custom_breakfast_food").category, "早餐");
+});
+
+test("converts legacy serving and package nutrition to per 100g", () => {
+  const normalized = normalizeState({
+    foods: [{
+      id: "serving_food",
+      name: "半份餐",
+      category: "餐食",
+      nutritionMode: "perServing",
+      servingGrams: 50,
+      nutrition: { calories: 200, protein: 10, carbs: 20, fat: 5, sodium: 100 }
+    }, {
+      id: "package_food",
+      name: "整包零食",
+      category: "零食",
+      nutritionMode: "perPackage",
+      packageGrams: 40,
+      nutrition: { calories: 180, protein: 4, carbs: 24, fat: 8, sodium: 220 }
+    }, {
+      id: "drink_food",
+      name: "旧饮料",
+      category: "饮品",
+      nutritionMode: "per100ml",
+      nutrition: { calories: 45, protein: 0, carbs: 11, fat: 0, sodium: 5 }
+    }]
+  });
+
+  assert.deepEqual(normalized.foods.find((food) => food.id === "serving_food").nutritionPer100g, {
+    calories: 400,
+    protein: 20,
+    carbs: 40,
+    fat: 10,
+    sodium: 200
+  });
+  assert.deepEqual(normalized.foods.find((food) => food.id === "package_food").nutritionPer100g, {
+    calories: 450,
+    protein: 10,
+    carbs: 60,
+    fat: 20,
+    sodium: 550
+  });
+  assert.deepEqual(normalized.foods.find((food) => food.id === "drink_food").nutritionPer100g, {
+    calories: 45,
+    protein: 0,
+    carbs: 11,
+    fat: 0,
+    sodium: 5
+  });
+});
+
 test("normalizes malformed foods back to built-in defaults", () => {
   const defaults = createDefaultState();
   const normalized = normalizeState({ foods: [null, { id: "", name: "", nutrition: {} }] });

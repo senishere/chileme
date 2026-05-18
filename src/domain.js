@@ -200,7 +200,7 @@ function assertCategoryName(state, name, existingName = "") {
   return categoryName;
 }
 
-function categoryIcon(name, icon = "") {
+export function defaultIconForCategory(name, icon = "") {
   const optionIcon = ICON_OPTIONS[name]?.[0];
   return normalizeCategoryName(icon) || optionIcon || "🍽️";
 }
@@ -211,7 +211,7 @@ export function addCategory(state, name, icon = "") {
   next.categories.push({
     id: `category_${categoryName}`,
     name: categoryName,
-    icon: categoryIcon(categoryName, icon)
+    icon: defaultIconForCategory(categoryName, icon)
   });
   return next;
 }
@@ -224,7 +224,7 @@ export function renameCategory(state, oldName, newName) {
   if (!category) throw new Error("分类不存在");
   category.name = to;
   category.id = `category_${to}`;
-  category.icon = categoryIcon(to, category.icon);
+  category.icon = defaultIconForCategory(to, category.icon);
   next.foods = next.foods.map((item) => (
     item.category === from ? { ...item, category: to } : item
   ));
