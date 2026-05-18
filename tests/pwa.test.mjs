@@ -52,13 +52,43 @@ test("README explains HTTPS deployment for iPhone offline use", () => {
   assert.match(readme, /首次联网打开/);
 });
 
-test("app exposes a food editing flow for custom and packaged foods", () => {
+test("bottom navigation uses simplified food label", () => {
+  const html = readText("../index.html");
+
+  assert.match(html, />食物</);
+  assert.doesNotMatch(html, /食物库/);
+});
+
+test("app exposes simplified recording and food editing contracts", () => {
   const app = readText("../src/app.js");
 
   assert.match(app, /data-action="edit-food"/);
   assert.match(app, /openFoodForm\(target\.dataset\.foodId \|\| ""\)/);
   assert.match(app, /name="foodId"/);
-  assert.match(app, /name="portionId"/);
+  assert.match(app, /name="amount"/);
+  assert.match(app, /name="unit"/);
+  assert.match(app, /nutritionPer100g/);
+  assert.match(app, /data-action="open-category-manager"/);
+  assert.match(app, /data-action="select-food-icon"/);
   assert.match(app, /state\.foods = state\.foods\.map/);
-  assert.match(app, /state\.portions = state\.portions\.map/);
+  assert.doesNotMatch(app, /默认份量|营养标注方式|每份重量|整包重量|液体密度|拳头宽度|掌心宽度|手指宽度|常用容器/);
+});
+
+test("timeline source does not render sodium", () => {
+  const app = readText("../src/app.js");
+  const timelineBlock = app.match(/function renderTimeline\([\s\S]*?function renderToday/)?.[0] || "";
+
+  assert.ok(timelineBlock);
+  assert.doesNotMatch(timelineBlock, /钠|sodium/);
+});
+
+test("stats source renders trend tabs without daily sodium rows", () => {
+  const app = readText("../src/app.js");
+  const statsBlock = app.match(/function renderStats\([\s\S]*?function renderSettings/)?.[0] || "";
+
+  assert.ok(statsBlock);
+  assert.match(statsBlock, /最近一周/);
+  assert.match(statsBlock, /最近一月/);
+  assert.match(statsBlock, /trendStats/);
+  assert.doesNotMatch(statsBlock, /day\.sodium/);
 });

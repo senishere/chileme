@@ -165,6 +165,89 @@ export function createDefaultState() {
   };
 }
 
+export function cloneState(state) {
+  const source = state || {};
+  return {
+    categories: (source.categories || []).map((category) => ({ ...category })),
+    foods: (source.foods || []).map((item) => ({
+      ...item,
+      nutritionPer100g: { ...(item.nutritionPer100g || item.nutrition || EMPTY_NUTRITION) }
+    })),
+    entries: (source.entries || []).map((entry) => ({
+      ...entry,
+      items: (entry.items || []).map((item) => ({
+        ...item,
+        nutrition: { ...(item.nutrition || EMPTY_NUTRITION) }
+      }))
+    })),
+    waterEntries: (source.waterEntries || []).map((entry) => ({ ...entry })),
+    profile: { ...(source.profile || {}) },
+    dailyGoal: { ...(source.dailyGoal || {}) }
+  };
+}
+
+function normalizeCategoryName(name) {
+  return String(name || "").trim();
+}
+
+function assertCategoryName(state, name, existingName = "") {
+  const categoryName = normalizeCategoryName(name);
+  if (!categoryName) throw new Error("分类名称不能为空");
+  const duplicate = (state.categories || []).some((category) => (
+    category.name === categoryName && category.name !== existingName
+  ));
+  if (duplicate) throw new Error("分类已存在");
+  return categoryName;
+}
+
+function categoryIcon(name, icon = "") {
+  const optionIcon = ICON_OPTIONS[name]?.[0];
+  return normalizeCategoryName(icon) || optionIcon || "🍽️";
+}
+
+export function addCategory(state, name, icon = "") {
+  const next = cloneState(state);
+  const categoryName = assertCategoryName(next, name);
+  next.categories.push({
+    id: `category_${categoryName}`,
+    name: categoryName,
+    icon: categoryIcon(categoryName, icon)
+  });
+  return next;
+}
+
+export function renameCategory(state, oldName, newName) {
+  const next = cloneState(state);
+  const from = normalizeCategoryName(oldName);
+  const to = assertCategoryName(next, newName, from);
+  const category = next.categories.find((item) => item.name === from);
+  if (!category) throw new Error("分类不存在");
+  category.name = to;
+  category.id = `category_${to}`;
+  category.icon = categoryIcon(to, category.icon);
+  next.foods = next.foods.map((item) => (
+    item.category === from ? { ...item, category: to } : item
+  ));
+  return next;
+}
+
+export function deleteCategory(state, name) {
+  const next = cloneState(state);
+  const categoryName = normalizeCategoryName(name);
+  if (categoryName === "其他") throw new Error("不能删除其他分类");
+  if (!next.categories.some((category) => category.name === categoryName)) {
+    throw new Error("分类不存在");
+  }
+  if (!next.categories.some((category) => category.name === "其他")) {
+    next.categories.push({ id: "category_其他", name: "其他", icon: "🍽️" });
+  }
+  next.categories = next.categories.filter((category) => category.name !== categoryName);
+  next.foods = next.foods.map((item) => (
+    item.category === categoryName ? { ...item, category: "其他" } : item
+  ));
+  return next;
+}
+
 export function dateKey(value = new Date()) {
   const date = value instanceof Date ? value : new Date(value);
   const formatter = new Intl.DateTimeFormat("en-CA", {
@@ -221,8 +304,13 @@ export function addDays(dayKey, offset) {
 }
 
 export function sevenDayStats(state, endDayKey = dateKey()) {
-  return Array.from({ length: 7 }, (_, index) => {
-    const date = addDays(endDayKey, index - 6);
+  return trendStats(state, endDayKey, 7);
+}
+
+export function trendStats(state, endDayKey = dateKey(), days = 7) {
+  const length = Number(days) === 30 ? 30 : 7;
+  return Array.from({ length }, (_, index) => {
+    const date = addDays(endDayKey, index - length + 1);
     return { date, ...summarizeDay(state, date) };
   });
 }
@@ -266,13 +354,20 @@ export function estimateDailyTargets(profile = {}, dailyGoal = {}) {
   };
 }
 
-function targetStatus(value, target, overRatio = 1) {
-  const safeTarget = positiveFiniteNumber(target, 0);
-  if (!safeTarget) return "neutral";
-  const ratio = nonNegativeFiniteNumber(value, 0) / safeTarget;
-  if (ratio < 0.8) return "low";
-  if (ratio > overRatio) return "over";
-  return "near";
+export function nutritionStatus(ratio) {
+  const safeRatio = nonNegativeFiniteNumber(ratio, 0);
+  if (safeRatio < 0.4) return "severe-low";
+  if (safeRatio < 0.75) return "low";
+  if (safeRatio <= 1.05) return "normal";
+  if (safeRatio <= 1.2) return "high";
+  return "over";
+}
+
+export function limitStatus(ratio) {
+  const safeRatio = nonNegativeFiniteNumber(ratio, 0);
+  if (safeRatio <= 1) return "normal";
+  if (safeRatio <= 1.2) return "high";
+  return "over";
 }
 
 export function dailyStructure(state, dayKey = dateKey()) {
@@ -288,10 +383,10 @@ export function dailyStructure(state, dayKey = dateKey()) {
   };
 
   for (const [key, metric] of Object.entries(metrics)) {
-    metric.status = key === "sodium" && metric.value <= metric.target
-      ? "near"
-      : targetStatus(metric.value, metric.target);
     metric.ratio = metric.target ? roundMetric(metric.value / metric.target) : 0;
+    metric.status = key === "sodium"
+      ? limitStatus(metric.ratio)
+      : nutritionStatus(metric.ratio);
   }
 
   return metrics;
@@ -360,7 +455,6 @@ export function exportLogRows(state, endDayKey = dateKey(), days = 7) {
         timestamp: entry.timestamp,
         type: "food",
         food: foodItem?.name || item.foodId || "未知食物",
-        portion: item.label || "",
         amount: nonNegativeFiniteNumber(item.amount, nonNegativeFiniteNumber(item.grams, 0)),
         unit: item.unit === "ml" ? "ml" : "g",
         calories: nonNegativeFiniteNumber(item.nutrition?.calories, 0),
@@ -381,7 +475,6 @@ export function exportLogRows(state, endDayKey = dateKey(), days = 7) {
       timestamp: entry.timestamp,
       type: "water",
       food: "饮水",
-      portion: "",
       amount: nonNegativeFiniteNumber(entry.milliliters, 0),
       unit: "ml",
       calories: 0,
@@ -403,7 +496,6 @@ export function exportRowsAsCsv(rows) {
     "timestamp",
     "type",
     "food",
-    "portion",
     "amount",
     "unit",
     "calories",

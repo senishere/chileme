@@ -308,6 +308,18 @@ h1 {
   background: var(--accent);
 }
 
+.structure-row.severe-low .structure-track span {
+  background: #c98c2f;
+}
+
+.structure-row.normal .structure-track span {
+  background: var(--primary);
+}
+
+.structure-row.high .structure-track span {
+  background: #d07a34;
+}
+
 .structure-row.over .structure-track span {
   background: var(--danger);
 }
@@ -456,6 +468,135 @@ h1 {
 
 .search-field {
   margin-bottom: 10px;
+}
+
+.icon-picker {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.icon-picker button {
+  min-width: 0;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 22px;
+}
+
+.icon-picker button.active {
+  border-color: var(--primary);
+  background: #e4f1e8;
+}
+
+.category-add {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+
+.category-list {
+  display: grid;
+  gap: 8px;
+}
+
+.category-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 9px;
+}
+
+.segmented {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 4px;
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+}
+
+.segmented button {
+  min-height: 36px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.segmented button.active {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 800;
+}
+
+.trend-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.trend-summary article {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 9px;
+}
+
+.trend-summary strong,
+.trend-summary span {
+  display: block;
+}
+
+.trend-summary span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.trend-bars {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8px, 1fr));
+  align-items: end;
+  gap: 4px;
+  height: 150px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 10px 8px 22px;
+}
+
+.trend-day {
+  position: relative;
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  height: 100%;
+}
+
+.trend-day span {
+  width: 100%;
+  min-height: 4px;
+  border-radius: 999px 999px 0 0;
+  background: linear-gradient(180deg, #7cbf8f, var(--primary));
+}
+
+.trend-day em {
+  position: absolute;
+  bottom: -17px;
+  color: var(--muted);
+  font-size: 9px;
+  font-style: normal;
+  writing-mode: vertical-rl;
 }
 
 @media (min-width: 700px) {

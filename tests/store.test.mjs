@@ -24,12 +24,14 @@ function memoryStorage() {
   };
 }
 
-test("loads default state when storage is empty", () => {
-  const store = createStore(memoryStorage());
-  const state = store.load();
+test("loads default simplified state when storage is empty", () => {
+  const state = createStore(memoryStorage()).load();
 
-  assert.equal(state.foods.length >= 4, true);
-  assert.equal(state.entries.length, 0);
+  assert.equal(state.foods.length >= 50, true);
+  assert.equal(state.categories.some((category) => category.name === "其他"), true);
+  assert.equal("portions" in state, false);
+  assert.equal("calibration" in state, false);
+  assert.deepEqual(state.entries, []);
 });
 
 test("clears corrupt persisted state and loads defaults", () => {
@@ -38,12 +40,197 @@ test("clears corrupt persisted state and loads defaults", () => {
 
   const state = createStore(storage).load();
 
-  assert.equal(state.foods.length >= 4, true);
+  assert.equal(state.foods.length >= 50, true);
   assert.equal(state.entries.length, 0);
   assert.equal(storage.getItem("chileme.state.v1"), null);
 });
 
-test("saves and reloads state", () => {
+test("normalizes legacy food categories, nutrition, and simplified shape", () => {
+  const normalized = normalizeState({
+    categories: [
+      { id: "category_custom", name: "自定义", icon: "⭐" },
+      { id: "", name: "", icon: "" }
+    ],
+    foods: [
+      {
+        id: " legacy_rice ",
+        name: " 旧米饭 ",
+        category: "主食",
+        emoji: "🍚",
+        image: 42,
+        nutrition: { calories: 88, protein: 3, carbs: 12, fat: 2 }
+      },
+      {
+        id: "legacy_custom",
+        name: "旧自定义",
+        category: "自定义",
+        icon: "⭐",
+        image: "data:image/png;base64,ok",
+        nutritionPer100g: { calories: 120, protein: 4, carbs: 20, fat: 3, sodium: 30 },
+        quickAdd: false
+      },
+      {
+        id: "legacy_unknown",
+        name: "未知分类",
+        category: "过期分类",
+        nutrition: { calories: 1, protein: 1, carbs: 1, fat: 1, sodium: 1 }
+      }
+    ],
+    portions: [{ id: "old", foodId: "legacy_rice", label: "旧份量", grams: 80 }],
+    calibration: { fistWidthCm: 10 }
+  });
+
+  assert.equal("portions" in normalized, false);
+  assert.equal("calibration" in normalized, false);
+  assert.ok(normalized.categories.find((category) => category.name === "自定义"));
+  assert.equal(normalized.foods.find((food) => food.id === "legacy_rice").category, "细粮");
+  assert.deepEqual(normalized.foods.find((food) => food.id === "legacy_rice").nutritionPer100g, {
+    calories: 88,
+    protein: 3,
+    carbs: 12,
+    fat: 2,
+    sodium: 0
+  });
+  assert.equal(normalized.foods.find((food) => food.id === "legacy_rice").icon, "🍚");
+  assert.equal(normalized.foods.find((food) => food.id === "legacy_custom").category, "自定义");
+  assert.equal(normalized.foods.find((food) => food.id === "legacy_custom").quickAdd, false);
+  assert.equal(normalized.foods.find((food) => food.id === "legacy_unknown").category, "其他");
+});
+
+test("normalizes malformed foods back to built-in defaults", () => {
+  const defaults = createDefaultState();
+  const normalized = normalizeState({ foods: [null, { id: "", name: "", nutrition: {} }] });
+
+  assert.deepEqual(normalized.foods, defaults.foods);
+  assert.equal(normalized.foods.includes(null), false);
+});
+
+test("normalizes entries by dropping portion metadata and preserving ml as grams", () => {
+  const normalized = normalizeState({
+    entries: [
+      {
+        id: "entry_valid",
+        timestamp: "2026-05-18T12:00:00+08:00",
+        items: [
+          {
+            foodId: "food_milk",
+            portionId: "portion_old",
+            label: "旧杯",
+            amount: "250",
+            unit: "ml",
+            grams: "250",
+            nutrition: { calories: "152.5", protein: 8, carbs: null, fat: -1, sodium: "105" }
+          },
+          {
+            foodId: "food_bad",
+            amount: -25,
+            nutrition: { calories: 99 }
+          }
+        ],
+        note: 42,
+        photo: null
+      },
+      {
+        id: "entry_bad_timestamp",
+        timestamp: "not a date",
+        items: []
+      }
+    ],
+    waterEntries: [
+      { id: "water_valid", timestamp: "2026-05-18T09:00:00+08:00", milliliters: "300" },
+      { id: "water_bad", timestamp: "bad", milliliters: 300 }
+    ]
+  });
+
+  assert.deepEqual(normalized.entries, [
+    {
+      id: "entry_valid",
+      timestamp: "2026-05-18T12:00:00+08:00",
+      items: [
+        {
+          foodId: "food_milk",
+          amount: 250,
+          unit: "ml",
+          grams: 250,
+          nutrition: { calories: 152.5, protein: 8, carbs: 0, fat: 0, sodium: 105 }
+        }
+      ],
+      note: "",
+      photo: ""
+    }
+  ]);
+  assert.deepEqual(normalized.waterEntries, [
+    { id: "water_valid", timestamp: "2026-05-18T09:00:00+08:00", milliliters: 300 }
+  ]);
+});
+
+test("preserves normalized profile and daily goals", () => {
+  const normalized = normalizeState({
+    profile: {
+      sex: "male",
+      age: "42",
+      heightCm: "178",
+      weightKg: "76",
+      activityLevel: "moderate",
+      goal: "gain"
+    },
+    dailyGoal: {
+      calories: null,
+      protein: 0,
+      waterMl: "2300"
+    }
+  });
+
+  assert.deepEqual(normalized.profile, {
+    sex: "male",
+    age: 42,
+    heightCm: 178,
+    weightKg: 76,
+    activityLevel: "moderate",
+    goal: "gain"
+  });
+  assert.deepEqual(normalized.dailyGoal, {
+    calories: null,
+    protein: null,
+    waterMl: 2300
+  });
+});
+
+test("createStore.load does not throw or erase legacy state", () => {
+  const storage = memoryStorage();
+  storage.setItem("chileme.state.v1", JSON.stringify({
+    foods: [{
+      id: "legacy_food",
+      name: "旧食物",
+      category: "蛋白质",
+      kind: "regular",
+      nutritionMode: "per100g",
+      nutrition: { calories: 88, protein: 20, carbs: 1, fat: 2 }
+    }],
+    entries: [{
+      id: "entry_legacy",
+      timestamp: "2026-05-18T12:00:00+08:00",
+      items: [{
+        foodId: "legacy_food",
+        portionId: "legacy_portion",
+        label: "旧份量",
+        grams: 80,
+        nutrition: { calories: 70, protein: 16, carbs: 1, fat: 2 }
+      }],
+      note: "keep",
+      photo: ""
+    }]
+  }));
+
+  const state = createStore(storage).load();
+
+  assert.equal(state.foods.find((food) => food.id === "legacy_food").category, "动物蛋白");
+  assert.equal(state.entries[0].id, "entry_legacy");
+  assert.equal("portionId" in state.entries[0].items[0], false);
+  assert.equal("label" in state.entries[0].items[0], false);
+});
+
+test("saves and reloads simplified state", () => {
   const storage = memoryStorage();
   const store = createStore(storage);
   const state = createDefaultState();
@@ -57,386 +244,10 @@ test("saves and reloads state", () => {
 
   store.save(state);
 
-  assert.equal(createStore(storage).load().entries[0].id, "entry_test");
-});
-
-test("normalizes partial imported state", () => {
-  const normalized = normalizeState({
-    foods: [{
-      id: "custom",
-      name: "自定义",
-      kind: "regular",
-      nutritionMode: "per100g",
-      nutrition: { calories: 100, protein: 5, carbs: 12, fat: 2, sodium: 20 }
-    }]
-  });
-
-  assert.equal(normalized.foods[0].id, "custom");
-  assert.deepEqual(normalized.entries, []);
-  assert.deepEqual(normalized.waterEntries, []);
-  assert.equal(typeof normalized.dailyGoal, "object");
-});
-
-test("normalizes malformed food and portion arrays back to defaults", () => {
-  const defaults = createDefaultState();
-  const normalized = normalizeState({ foods: [null], portions: [null] });
-
-  assert.deepEqual(normalized.foods, defaults.foods);
-  assert.deepEqual(normalized.portions, defaults.portions);
-  assert.equal(normalized.foods.includes(null), false);
-  assert.equal(normalized.portions.includes(null), false);
-});
-
-test("normalizes mixed food and portion arrays by dropping invalid records", () => {
-  const normalized = normalizeState({
-    foods: [
-      null,
-      {
-        id: " custom_food ",
-        name: " 自定义鸡肉 ",
-        category: " 自定义 ",
-        kind: "packaged",
-        emoji: "🍱",
-        image: 42,
-        nutritionMode: "perServing",
-        servingGrams: 0,
-        packageGrams: "bad",
-        nutrition: { calories: 180, protein: 24, carbs: 3, fat: 6, sodium: 300 },
-        defaultPortionId: " custom_portion ",
-        quickAdd: false
-      },
-      {
-        id: "bad_kind",
-        name: "坏类型",
-        kind: "raw",
-        nutritionMode: "per100g",
-        nutrition: { calories: 1, protein: 1, carbs: 1, fat: 1, sodium: 1 }
-      },
-      {
-        id: "bad_nutrition",
-        name: "坏营养",
-        kind: "regular",
-        nutritionMode: "per100g",
-        nutrition: { calories: -1, protein: 1, carbs: 1, fat: 1, sodium: 1 }
-      }
-    ],
-    portions: [
-      null,
-      { id: " custom_portion ", foodId: " custom_food ", label: " 1盒 ", amount: "125", unit: "g", grams: "125" },
-      { id: "", foodId: "custom_food", label: "空 ID", grams: 100 },
-      { id: "bad_grams", foodId: "custom_food", label: "坏克数", grams: 0 }
-    ]
-  });
-
-  assert.deepEqual(normalized.foods[0], {
-    id: "custom_food",
-    name: "自定义鸡肉",
-    category: "自定义",
-    kind: "packaged",
-    emoji: "🍱",
-    image: "",
-    nutritionMode: "perServing",
-    densityGPerMl: 1,
-    servingGrams: 100,
-    packageGrams: 100,
-    nutrition: { calories: 180, protein: 24, carbs: 3, fat: 6, sodium: 300 },
-    defaultPortionId: "custom_portion",
-    quickAdd: false
-  });
-  assert.ok(normalized.foods.find((food) => food.id === "food_rice"));
-  assert.deepEqual(normalized.portions[0], {
-    id: "custom_portion",
-    foodId: "custom_food",
-    label: "1盒",
-    amount: 125,
-    unit: "g",
-    grams: 125
-  });
-  assert.ok(normalized.portions.find((portion) => portion.id === "portion_rice_fist"));
-});
-
-test("normalizes malformed entries and water entries", () => {
-  const normalized = normalizeState({
-    entries: [
-      {
-        id: "entry_valid",
-        timestamp: "2026-05-18T12:00:00+08:00",
-        items: [
-          {
-            foodId: "food_rice",
-            portionId: "portion_rice_fist",
-            label: 123,
-            grams: "150",
-            nutrition: { calories: "174", protein: 3.9, carbs: null, fat: -1, sodium: "2" }
-          },
-          {
-            foodId: "food_bad",
-            grams: -25,
-            nutrition: { calories: 99 }
-          }
-        ],
-        note: 42,
-        photo: null
-      },
-      {
-        id: "entry_bad_timestamp",
-        timestamp: "not a date",
-        items: []
-      },
-      {
-        id: "entry_bad_items",
-        timestamp: "2026-05-18T12:00:00+08:00",
-        items: "bad"
-      }
-    ],
-    waterEntries: [
-      { id: "water_valid", timestamp: "2026-05-18T09:00:00+08:00", milliliters: "300" },
-      { id: "water_bad_timestamp", timestamp: "bad", milliliters: 300 },
-      { id: "water_bad_amount", timestamp: "2026-05-18T09:00:00+08:00", milliliters: -50 }
-    ]
-  });
-
-  assert.deepEqual(normalized.entries, [
-    {
-      id: "entry_valid",
-      timestamp: "2026-05-18T12:00:00+08:00",
-      items: [
-        {
-          foodId: "food_rice",
-          portionId: "portion_rice_fist",
-          label: "150g",
-          amount: 150,
-          unit: "g",
-          grams: 150,
-          nutrition: { calories: 174, protein: 3.9, carbs: 0, fat: 0, sodium: 2 }
-        }
-      ],
-      note: "",
-      photo: ""
-    }
-  ]);
-  assert.deepEqual(normalized.waterEntries, [
-    { id: "water_valid", timestamp: "2026-05-18T09:00:00+08:00", milliliters: 300 }
-  ]);
-});
-
-test("normalizes invalid calibration and goal leaf values", () => {
-  const defaults = createDefaultState();
-  const normalized = normalizeState({
-    calibration: {
-      fistWidthCm: "wide",
-      palmWidthCm: 9.25,
-      fingerWidthCm: "2.1",
-      containers: "bad"
-    },
-    dailyGoal: {
-      calories: "many",
-      protein: 120,
-      waterMl: "2300"
-    }
-  });
-
-  assert.equal(normalized.calibration.fistWidthCm, defaults.calibration.fistWidthCm);
-  assert.equal(normalized.calibration.palmWidthCm, 9.25);
-  assert.equal(normalized.calibration.fingerWidthCm, 2.1);
-  assert.deepEqual(normalized.calibration.containers, defaults.calibration.containers);
-  assert.equal(normalized.dailyGoal.calories, defaults.dailyGoal.calories);
-  assert.equal(normalized.dailyGoal.protein, 120);
-  assert.equal(normalized.dailyGoal.waterMl, 2300);
-});
-
-test("normalizes profile fields for target estimation", () => {
-  const normalized = normalizeState({
-    profile: {
-      sex: "male",
-      age: "42",
-      heightCm: "178",
-      weightKg: "76",
-      activityLevel: "moderate",
-      goal: "gain"
-    }
-  });
-
-  assert.deepEqual(normalized.profile, {
-    sex: "male",
-    age: 42,
-    heightCm: 178,
-    weightKg: 76,
-    activityLevel: "moderate",
-    goal: "gain"
-  });
-
-  assert.equal(normalizeState({ profile: { sex: "bad", age: -1 } }).profile.sex, "female");
-});
-
-test("normalizes malformed calibration containers", () => {
-  const defaults = createDefaultState();
-  const normalized = normalizeState({
-    calibration: {
-      containers: [
-        { id: "", label: "", capacityMl: "huge" },
-        { id: "container_valid", label: "水杯", capacityMl: "250" }
-      ]
-    }
-  });
-
-  assert.deepEqual(normalized.calibration.containers, [
-    { id: "container_valid", label: "水杯", capacityMl: 250 }
-  ]);
-
-  const fallback = normalizeState({
-    calibration: {
-      containers: [{ id: "", label: "", capacityMl: "huge" }]
-    }
-  });
-
-  assert.deepEqual(fallback.calibration.containers, defaults.calibration.containers);
-});
-
-test("normalizes non-positive calibration and goal numbers", () => {
-  const defaults = createDefaultState();
-  const normalized = normalizeState({
-    calibration: {
-      fistWidthCm: 0,
-      palmWidthCm: -1,
-      fingerWidthCm: "2.2"
-    },
-    dailyGoal: {
-      calories: -2000,
-      protein: 0,
-      waterMl: "2100"
-    }
-  });
-
-  assert.equal(normalized.calibration.fistWidthCm, defaults.calibration.fistWidthCm);
-  assert.equal(normalized.calibration.palmWidthCm, defaults.calibration.palmWidthCm);
-  assert.equal(normalized.calibration.fingerWidthCm, 2.2);
-  assert.equal(normalized.dailyGoal.calories, defaults.dailyGoal.calories);
-  assert.equal(normalized.dailyGoal.protein, null);
-  assert.equal(normalized.dailyGoal.waterMl, 2100);
-});
-
-test("preserves unset daily goals through normalization", () => {
-  const normalized = normalizeState({
-    dailyGoal: {
-      calories: null,
-      protein: 0,
-      waterMl: ""
-    }
-  });
-
-  assert.deepEqual(normalized.dailyGoal, {
-    calories: null,
-    protein: null,
-    waterMl: null
-  });
-});
-
-test("preserves unset daily goals through save and load", () => {
-  const storage = memoryStorage();
-  const store = createStore(storage);
-  const state = createDefaultState();
-  state.dailyGoal = { calories: null, protein: null, waterMl: 1800 };
-
-  store.save(state);
-
-  assert.deepEqual(createStore(storage).load().dailyGoal, {
-    calories: null,
-    protein: null,
-    waterMl: 1800
-  });
-});
-
-test("normalizes legacy nutrition and portions with sodium and units", () => {
-  const normalized = normalizeState({
-    foods: [{
-      id: "legacy_food",
-      name: "旧食物",
-      kind: "regular",
-      nutritionMode: "per100g",
-      nutrition: { calories: 88, protein: 3, carbs: 12, fat: 2 }
-    }],
-    portions: [{
-      id: "legacy_portion",
-      foodId: "legacy_food",
-      label: "旧份量",
-      grams: 80
-    }]
-  });
-
-  const food = normalized.foods.find((item) => item.id === "legacy_food");
-  const portion = normalized.portions.find((item) => item.id === "legacy_portion");
-
-  assert.deepEqual(food.nutrition, { calories: 88, protein: 3, carbs: 12, fat: 2, sodium: 0 });
-  assert.deepEqual(portion, {
-    id: "legacy_portion",
-    foodId: "legacy_food",
-    label: "旧份量",
-    amount: 80,
-    unit: "g",
-    grams: 80
-  });
-});
-
-test("merges missing built-in foods without overriding user foods", () => {
-  const normalized = normalizeState({
-    foods: [{
-      id: "food_milk",
-      name: "我的牛奶",
-      category: "自定义",
-      kind: "regular",
-      nutritionMode: "per100ml",
-      densityGPerMl: 1,
-      nutrition: { calories: 10, protein: 1, carbs: 1, fat: 1, sodium: 1 },
-      defaultPortionId: "custom_milk_portion",
-      quickAdd: false
-    }],
-    portions: [{
-      id: "custom_milk_portion",
-      foodId: "food_milk",
-      label: "我的杯",
-      amount: 123,
-      unit: "ml",
-      grams: 123
-    }]
-  });
-
-  assert.equal(normalized.foods.find((food) => food.id === "food_milk").name, "我的牛奶");
-  assert.ok(normalized.foods.find((food) => food.id === "food_soy_milk"));
-  assert.ok(normalized.portions.find((portion) => portion.id === "custom_milk_portion"));
-  assert.ok(normalized.portions.find((portion) => portion.id === "portion_soy_milk_cup"));
-});
-
-test("rejects nonnumeric JSON values for positive numbers", () => {
-  const defaults = createDefaultState();
-  const normalized = normalizeState({
-    calibration: {
-      fistWidthCm: true,
-      palmWidthCm: [],
-      fingerWidthCm: {},
-      containers: [
-        { id: "container_bool", label: "布尔杯", capacityMl: true },
-        { id: "container_empty", label: "空杯", capacityMl: "" },
-        { id: "container_space", label: "空白杯", capacityMl: "   " },
-        { id: "container_valid", label: "水杯", capacityMl: "250" }
-      ]
-    },
-    dailyGoal: {
-      calories: true,
-      protein: [],
-      waterMl: "   "
-    }
-  });
-
-  assert.equal(normalized.calibration.fistWidthCm, defaults.calibration.fistWidthCm);
-  assert.equal(normalized.calibration.palmWidthCm, defaults.calibration.palmWidthCm);
-  assert.equal(normalized.calibration.fingerWidthCm, defaults.calibration.fingerWidthCm);
-  assert.deepEqual(normalized.calibration.containers, [
-    { id: "container_valid", label: "水杯", capacityMl: 250 }
-  ]);
-  assert.equal(normalized.dailyGoal.calories, defaults.dailyGoal.calories);
-  assert.equal(normalized.dailyGoal.protein, defaults.dailyGoal.protein);
-  assert.equal(normalized.dailyGoal.waterMl, null);
+  const loaded = createStore(storage).load();
+  assert.equal(loaded.entries[0].id, "entry_test");
+  assert.equal("portions" in loaded, false);
+  assert.equal("calibration" in loaded, false);
 });
 
 test("save retries without entry photos when storage quota rejects the full state", () => {
@@ -449,7 +260,6 @@ test("save retries without entry photos when storage quota rejects the full stat
       error.name = "QuotaExceededError";
       throw error;
     }
-    memoryStorage().setItem(key, value);
     storage.savedKey = key;
     storage.savedValue = value;
   };
@@ -507,6 +317,7 @@ test("exports and imports JSON state", () => {
   const imported = importState(exportState(state));
 
   assert.equal(imported.entries[0].id, "entry_export");
+  assert.equal("portions" in imported, false);
 });
 
 test("throws a useful error for invalid import JSON", () => {

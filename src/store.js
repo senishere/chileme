@@ -1,5 +1,6 @@
 import {
   EMPTY_NUTRITION,
+  ICON_OPTIONS,
   createDefaultState,
   nonNegativeFiniteNumber,
   positiveFiniteNumber
@@ -15,35 +16,6 @@ function normalizePositiveNumber(value, fallback) {
       ? Number(value)
       : NaN;
   return Number.isFinite(number) && number > 0 ? number : fallback;
-}
-
-function normalizeContainers(containers, defaults) {
-  if (!Array.isArray(containers)) return defaults.calibration.containers;
-
-  const validContainers = containers.flatMap((container) => {
-    if (!container || typeof container !== "object") return [];
-    const id = typeof container.id === "string" ? container.id.trim() : "";
-    const label = typeof container.label === "string" ? container.label.trim() : "";
-    const capacityMl = normalizePositiveNumber(container.capacityMl, NaN);
-    if (!id || !label || !Number.isFinite(capacityMl)) return [];
-    return [{ id, label, capacityMl }];
-  });
-
-  return validContainers.length > 0
-    ? validContainers
-    : defaults.calibration.containers;
-}
-
-function normalizeCalibration(calibration, defaults) {
-  if (!calibration || typeof calibration !== "object") return defaults.calibration;
-
-  return {
-    ...defaults.calibration,
-    fistWidthCm: normalizePositiveNumber(calibration.fistWidthCm, defaults.calibration.fistWidthCm),
-    palmWidthCm: normalizePositiveNumber(calibration.palmWidthCm, defaults.calibration.palmWidthCm),
-    fingerWidthCm: normalizePositiveNumber(calibration.fingerWidthCm, defaults.calibration.fingerWidthCm),
-    containers: normalizeContainers(calibration.containers, defaults)
-  };
 }
 
 function normalizeDailyGoal(dailyGoal, defaults) {
@@ -98,16 +70,14 @@ function normalizeNutrition(nutrition) {
 
 function isValidNutrition(nutrition) {
   if (!nutrition || typeof nutrition !== "object") return false;
-  const baseValid = ["calories", "protein", "carbs", "fat"].every((key) => (
-    typeof nutrition[key] === "number"
-      && Number.isFinite(nutrition[key])
-      && nutrition[key] >= 0
-  ));
-  const sodiumValid = nutrition.sodium === undefined || (
-    typeof nutrition.sodium === "number"
-      && Number.isFinite(nutrition.sodium)
-      && nutrition.sodium >= 0
-  );
+  const baseValid = ["calories", "protein", "carbs", "fat"].every((key) => {
+    const number = Number(nutrition[key]);
+    return Number.isFinite(number) && number >= 0;
+  });
+  const sodiumValid = nutrition.sodium === undefined || (() => {
+    const number = Number(nutrition.sodium);
+    return Number.isFinite(number) && number >= 0;
+  })();
   return baseValid && sodiumValid;
 }
 
@@ -122,74 +92,84 @@ function mergeById(primary, defaults) {
   return merged;
 }
 
-function normalizeFoods(foods, defaults) {
+function normalizeCategoryName(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function categoryIcon(name, explicitIcon = "") {
+  return normalizeCategoryName(explicitIcon) || ICON_OPTIONS[name]?.[0] || "🍽️";
+}
+
+function normalizeCategories(categories, defaults) {
+  const merged = [];
+  const seen = new Set();
+  const add = (category) => {
+    if (!category || typeof category !== "object") return;
+    const name = normalizeCategoryName(category.name);
+    if (!name || seen.has(name)) return;
+    seen.add(name);
+    merged.push({
+      id: normalizeCategoryName(category.id) || `category_${name}`,
+      name,
+      icon: categoryIcon(name, category.icon)
+    });
+  };
+
+  for (const category of defaults.categories) add(category);
+  if (Array.isArray(categories)) {
+    for (const category of categories) add(category);
+  }
+  return merged;
+}
+
+const LEGACY_CATEGORY_MAP = new Map([
+  ["主食", "细粮"],
+  ["蛋白质", "动物蛋白"],
+  ["蔬果", "蔬菜"],
+  ["饮品", "饮料"],
+  ["奶/饮品", "奶"],
+  ["常吃", "其他"],
+  ["自定义", "其他"]
+]);
+
+function normalizeFoodCategory(value, validCategoryNames) {
+  const category = normalizeCategoryName(value);
+  if (!category) return "其他";
+  if (validCategoryNames.has(category)) return category;
+  const mapped = LEGACY_CATEGORY_MAP.get(category) || category;
+  return validCategoryNames.has(mapped) ? mapped : "其他";
+}
+
+function normalizeFoods(foods, defaults, categories) {
   if (!Array.isArray(foods)) return defaults.foods;
+  const validCategoryNames = new Set(categories.map((category) => category.name));
 
   const validFoods = foods.flatMap((food) => {
     if (!food || typeof food !== "object") return [];
     const id = typeof food.id === "string" ? food.id.trim() : "";
     const name = typeof food.name === "string" ? food.name.trim() : "";
-    const kind = food.kind;
-    const nutritionMode = food.nutritionMode;
+    const nutrition = food.nutritionPer100g || food.nutrition;
     if (
       !id
       || !name
-      || (kind !== "regular" && kind !== "packaged")
-      || !["per100g", "per100ml", "perServing", "perPackage"].includes(nutritionMode)
-      || !isValidNutrition(food.nutrition)
+      || !isValidNutrition(nutrition)
     ) {
       return [];
     }
+    const category = normalizeFoodCategory(food.category, validCategoryNames);
 
-    const normalized = {
+    return [{
       id,
       name,
-      category: typeof food.category === "string" && food.category.trim()
-        ? food.category.trim()
-        : "常吃",
-      kind,
-      emoji: typeof food.emoji === "string" && food.emoji.trim()
-        ? food.emoji.trim()
-        : "🍽️",
+      category,
+      icon: categoryIcon(category, food.icon || food.emoji),
       image: normalizeDataUrl(food.image),
-      nutritionMode,
-      densityGPerMl: normalizePositiveNumber(food.densityGPerMl, 1),
-      nutrition: normalizeNutrition(food.nutrition),
-      defaultPortionId: typeof food.defaultPortionId === "string"
-        ? food.defaultPortionId.trim()
-        : "",
+      nutritionPer100g: normalizeNutrition(nutrition),
       quickAdd: food.quickAdd === false ? false : true
-    };
-
-    if (kind === "packaged") {
-      normalized.servingGrams = normalizePositiveNumber(food.servingGrams, 100);
-      normalized.packageGrams = normalizePositiveNumber(food.packageGrams, 100);
-    }
-
-    return [normalized];
+    }];
   });
 
   return validFoods.length > 0 ? mergeById(validFoods, defaults.foods) : defaults.foods;
-}
-
-function normalizePortions(portions, defaults) {
-  if (!Array.isArray(portions)) return defaults.portions;
-
-  const validPortions = portions.flatMap((portion) => {
-    if (!portion || typeof portion !== "object") return [];
-    const id = typeof portion.id === "string" ? portion.id.trim() : "";
-    const foodId = typeof portion.foodId === "string" ? portion.foodId.trim() : "";
-    const label = typeof portion.label === "string" ? portion.label.trim() : "";
-    const unit = portion.unit === "ml" ? "ml" : "g";
-    const amount = normalizePositiveNumber(portion.amount, normalizePositiveNumber(portion.grams, NaN));
-    const grams = unit === "ml"
-      ? normalizePositiveNumber(portion.grams, amount)
-      : amount;
-    if (!id || !foodId || !label || !Number.isFinite(amount) || !Number.isFinite(grams)) return [];
-    return [{ id, foodId, label, amount, unit, grams }];
-  });
-
-  return validPortions.length > 0 ? mergeById(validPortions, defaults.portions) : defaults.portions;
 }
 
 function dataUrlBytes(value) {
@@ -209,20 +189,11 @@ function normalizeEntryItems(items) {
     const foodId = typeof item.foodId === "string" ? item.foodId.trim() : "";
     const unit = item.unit === "ml" ? "ml" : "g";
     const amount = positiveFiniteNumber(item.amount, positiveFiniteNumber(item.grams, NaN));
-    const grams = unit === "ml"
-      ? positiveFiniteNumber(item.grams, amount)
-      : amount;
+    const grams = amount;
     if (!foodId || !Number.isFinite(amount) || !Number.isFinite(grams)) return [];
-
-    const portionId = typeof item.portionId === "string" ? item.portionId : "";
-    const label = typeof item.label === "string" && item.label.trim()
-      ? item.label
-      : `${amount}${unit}`;
 
     return [{
       foodId,
-      portionId,
-      label,
       amount,
       unit,
       grams,
@@ -272,13 +243,13 @@ function normalizeWaterEntries(waterEntries) {
 export function normalizeState(input) {
   const defaults = createDefaultState();
   const state = input && typeof input === "object" ? input : {};
+  const categories = normalizeCategories(state.categories, defaults);
 
   return {
-    foods: normalizeFoods(state.foods, defaults),
-    portions: normalizePortions(state.portions, defaults),
+    categories,
+    foods: normalizeFoods(state.foods, defaults, categories),
     entries: normalizeEntries(state.entries),
     waterEntries: normalizeWaterEntries(state.waterEntries),
-    calibration: normalizeCalibration(state.calibration, defaults),
     profile: normalizeProfile(state.profile, defaults),
     dailyGoal: normalizeDailyGoal(state.dailyGoal, defaults)
   };

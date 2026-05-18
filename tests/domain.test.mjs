@@ -1,21 +1,26 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  addCategory,
   buildEntryItem,
   calculateItemNutrition,
+  cloneState,
   createDefaultState,
   dateKey,
+  deleteCategory,
   dailyStructure,
   estimateDailyTargets,
   exportLogRows,
   exportRowsAsCsv,
   filterFoods,
   findFood,
-  findPortion,
+  limitStatus,
   listFoodCategories,
-  portionsForFood,
+  nutritionStatus,
+  renameCategory,
   summarizeDay,
-  sevenDayStats
+  sevenDayStats,
+  trendStats
 } from "../src/domain.js";
 
 test("calculates per-100g nutrition from grams", () => {
@@ -105,7 +110,7 @@ test("summarizes multiple water entries for a day", () => {
   assert.equal(summarizeDay(state, dateKey(new Date(2026, 4, 18, 12, 0))).waterMl, 750);
 });
 
-test("builds seven days of stats ending on the selected date", () => {
+test("builds trend stats ending on the selected date", () => {
   const state = createDefaultState();
   state.entries = [
     {
@@ -123,12 +128,16 @@ test("builds seven days of stats ending on the selected date", () => {
     }
   ];
 
-  const stats = sevenDayStats(state, "2026-05-18");
+  const stats = trendStats(state, "2026-05-18", 7);
+  const month = trendStats(state, "2026-05-18", 30);
 
   assert.equal(stats.length, 7);
   assert.equal(stats[0].date, "2026-05-12");
   assert.equal(stats[6].date, "2026-05-18");
   assert.equal(stats[6].calories, 174);
+  assert.equal(month.length, 30);
+  assert.equal(month[0].date, "2026-04-19");
+  assert.deepEqual(sevenDayStats(state, "2026-05-18"), stats);
 });
 
 test("formats local dates as yyyy-mm-dd", () => {
@@ -159,11 +168,32 @@ test("default foods use simplified categories and icon fields", () => {
   assert.equal(typeof findFood(state, "food_rice").nutritionPer100g.calories, "number");
 });
 
-test("portion compatibility helpers tolerate simplified default state", () => {
+test("category helpers add rename delete and move foods to fallback category", () => {
   const state = createDefaultState();
+  const cloned = cloneState(state);
 
-  assert.equal(findPortion(state, "portion_rice_fist"), undefined);
-  assert.deepEqual(portionsForFood(state, "food_rice"), []);
+  const added = addCategory(cloned, "自定义", "⭐");
+  assert.notEqual(added, cloned);
+  assert.ok(added.categories.find((category) => category.name === "自定义"));
+
+  const customFood = {
+    ...added.foods[0],
+    id: "food_custom",
+    name: "自定义餐",
+    category: "自定义"
+  };
+  const renamed = renameCategory({ ...added, foods: [...added.foods, customFood] }, "自定义", "备餐");
+  assert.ok(renamed.categories.find((category) => category.name === "备餐"));
+  assert.equal(renamed.foods.find((food) => food.id === "food_custom").category, "备餐");
+
+  const deleted = deleteCategory(renamed, "备餐");
+  assert.equal(deleted.categories.some((category) => category.name === "备餐"), false);
+  assert.equal(deleted.foods.find((food) => food.id === "food_custom").category, "其他");
+
+  assert.throws(() => addCategory(deleted, "其他"), /分类已存在/);
+  assert.throws(() => renameCategory(deleted, "其他", "细粮"), /分类已存在/);
+  assert.throws(() => deleteCategory(deleted, "其他"), /不能删除/);
+  assert.throws(() => addCategory(deleted, " "), /分类名称/);
 });
 
 test("default state includes a mixed built-in food library", () => {
@@ -206,7 +236,6 @@ test("exports food and water rows for a rolling day range", () => {
     timestamp: "2026-05-18T12:00:00",
     items: [{
       foodId: "food_rice",
-      label: "1拳",
       amount: 150,
       unit: "g",
       nutrition: { calories: 174, protein: 3.9, carbs: 38.85, fat: 0.45, sodium: 1.5 }
@@ -218,7 +247,6 @@ test("exports food and water rows for a rolling day range", () => {
     timestamp: "2026-05-10T12:00:00",
     items: [{
       foodId: "food_rice",
-      label: "1拳",
       amount: 150,
       unit: "g",
       nutrition: { calories: 174, protein: 3.9, carbs: 38.85, fat: 0.45, sodium: 1.5 }
@@ -235,7 +263,6 @@ test("exports food and water rows for a rolling day range", () => {
     timestamp: "2026-05-18T12:00:00",
     type: "food",
     food: "米饭",
-    portion: "1拳",
     amount: 150,
     unit: "g",
     calories: 174,
@@ -250,7 +277,6 @@ test("exports food and water rows for a rolling day range", () => {
     timestamp: "2026-05-18T15:00:00",
     type: "water",
     food: "饮水",
-    portion: "",
     amount: 300,
     unit: "ml",
     calories: 0,
@@ -269,7 +295,6 @@ test("serializes exported rows as escaped CSV", () => {
     timestamp: "2026-05-18T12:00:00",
     type: "food",
     food: "米饭,鸡蛋",
-    portion: "1拳",
     amount: 150,
     unit: "g",
     calories: 174,
@@ -281,8 +306,20 @@ test("serializes exported rows as escaped CSV", () => {
     note: "午餐"
   }]);
 
-  assert.equal(csv.split("\n")[0], "date,timestamp,type,food,portion,amount,unit,calories,protein,carbs,fat,sodium,waterMl,note");
+  assert.equal(csv.split("\n")[0], "date,timestamp,type,food,amount,unit,calories,protein,carbs,fat,sodium,waterMl,note");
   assert.match(csv, /"米饭,鸡蛋"/);
+});
+
+test("status helpers classify nutrition targets and upper limits", () => {
+  assert.equal(nutritionStatus(0.39), "severe-low");
+  assert.equal(nutritionStatus(0.4), "low");
+  assert.equal(nutritionStatus(0.75), "normal");
+  assert.equal(nutritionStatus(1.05), "normal");
+  assert.equal(nutritionStatus(1.2), "high");
+  assert.equal(nutritionStatus(1.21), "over");
+  assert.equal(limitStatus(1), "normal");
+  assert.equal(limitStatus(1.2), "high");
+  assert.equal(limitStatus(1.21), "over");
 });
 
 test("estimates rough daily targets from profile with explicit goal overrides", () => {
@@ -326,8 +363,8 @@ test("builds daily structure statuses from summary and targets", () => {
 
   const structure = dailyStructure(state, "2026-05-18");
 
-  assert.equal(structure.calories.status, "over");
+  assert.equal(structure.calories.status, "normal");
   assert.equal(structure.protein.status, "low");
-  assert.equal(structure.waterMl.status, "low");
-  assert.equal(structure.sodium.status, "over");
+  assert.equal(structure.waterMl.status, "severe-low");
+  assert.equal(structure.sodium.status, "high");
 });
