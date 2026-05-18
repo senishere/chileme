@@ -469,6 +469,20 @@ test("exports and imports JSON state", () => {
   assert.equal("portions" in imported, false);
 });
 
+test("rejects record-detail JSON when importing a full backup", () => {
+  const detailRows = [{
+    date: "2026-05-18",
+    timestamp: "2026-05-18T12:00:00",
+    type: "food",
+    food: "米饭",
+    amount: 150,
+    unit: "g"
+  }];
+
+  assert.throws(() => importState(JSON.stringify(detailRows)), /完整备份 JSON/);
+  assert.throws(() => importState("{}"), /完整备份 JSON/);
+});
+
 test("throws a useful error for invalid import JSON", () => {
   assert.throws(() => importState("{bad json"), /无法导入数据/);
 });

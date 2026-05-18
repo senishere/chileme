@@ -400,8 +400,8 @@ function renderSettings() {
       <div class="settings-group">
         <h3>完整备份</h3>
         <div class="actions-row">
-          <button class="button secondary" type="button" data-action="export">导出 JSON</button>
-          <button class="button secondary" type="button" data-action="import">导入 JSON</button>
+          <button class="button secondary" type="button" data-action="export">导出备份 JSON</button>
+          <button class="button secondary" type="button" data-action="import">导入备份 JSON</button>
         </div>
       </div>
       <div class="settings-group">
@@ -804,6 +804,7 @@ function importJson() {
     try {
       state = importState(await file.text());
       saveAndRender();
+      alert("备份已导入");
     } catch (error) {
       alert(error.message);
     }

@@ -396,8 +396,19 @@ export function exportState(state) {
 
 export function importState(json) {
   try {
-    return normalizeState(JSON.parse(json));
+    const parsed = JSON.parse(json);
+    const hasStateShape = parsed
+      && typeof parsed === "object"
+      && !Array.isArray(parsed)
+      && ["categories", "foods", "entries", "waterEntries", "profile", "dailyGoal"].some((key) => key in parsed);
+    if (!hasStateShape) {
+      throw new Error("完整备份 JSON");
+    }
+    return normalizeState(parsed);
   } catch (error) {
+    if (error.message === "完整备份 JSON") {
+      throw new Error("无法导入数据：请选择完整备份 JSON，不是记录明细 JSON。");
+    }
     throw new Error("无法导入数据：JSON 格式无效");
   }
 }

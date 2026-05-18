@@ -223,3 +223,14 @@ test("settings source groups export controls into one form instead of four sibli
   assert.doesNotMatch(settingsBlock, /data-action="export-range" data-days="7"/);
   assert.doesNotMatch(settingsBlock, /data-action="export-range" data-days="30"/);
 });
+
+test("settings distinguishes full backup import from record detail JSON", () => {
+  const app = readText("../src/app.js");
+  const settingsBlock = app.match(/function renderSettings\([\s\S]*?function render\(\)/)?.[0] || "";
+  const importBlock = app.match(/function importJson\(\) \{[\s\S]*?document\.addEventListener\("click"/)?.[0] || "";
+
+  assert.match(settingsBlock, /完整备份/);
+  assert.match(settingsBlock, /导入备份 JSON/);
+  assert.match(settingsBlock, /记录明细/);
+  assert.match(importBlock, /alert\("备份已导入"/);
+});
