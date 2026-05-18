@@ -129,6 +129,33 @@ test("category manager supports selecting default category icons", () => {
   assert.match(app, /addCategory\(state, data\.get\("categoryName"\), data\.get\("icon"\)\)/);
 });
 
+test("food list metadata uses compact chips instead of one wrapping hint line", () => {
+  const app = readText("../src/app.js");
+  const css = readText("../src/styles.css");
+  const foodRowsBlock = app.match(/function renderFoodRows\(\) \{[\s\S]*?function renderFoods/)?.[0] || "";
+
+  assert.ok(foodRowsBlock);
+  assert.match(foodRowsBlock, /food-meta/);
+  assert.match(foodRowsBlock, /food-meta-chip/);
+  assert.match(css, /\.food-meta/);
+  assert.match(css, /\.food-meta-chip/);
+  assert.doesNotMatch(foodRowsBlock, /<br><span class="hint">\$\{escapeHtml\(food\.category\)\} · \$\{calories\} kcal\/100g/);
+});
+
+test("food icon picker centers emoji within each button", () => {
+  const css = readText("../src/styles.css");
+
+  assert.match(css, /\.icon-picker button \{[\s\S]*display: grid/);
+  assert.match(css, /\.icon-picker button \{[\s\S]*place-items: center/);
+});
+
+test("app install icon uses a rice emoji mark", () => {
+  const svg = readText("../assets/icon.svg");
+
+  assert.match(svg, /🍚/);
+  assert.doesNotMatch(svg, />么</);
+});
+
 test("today structure labels severe low status as serious shortage", () => {
   const app = readText("../src/app.js");
   const structureBlock = app.match(/function renderStructure\([\s\S]*?function renderToday/)?.[0] || "";

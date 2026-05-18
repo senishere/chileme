@@ -282,7 +282,13 @@ function renderFoodRows() {
     const favoriteLabel = food.quickAdd === false ? "常用" : "取消";
     return `
       <article class="food-row">
-        <div><strong>${escapeHtml(food.icon || "🍽️")} ${escapeHtml(food.name)}</strong><br><span class="hint">${escapeHtml(food.category)} · ${calories} kcal/100g</span></div>
+        <div class="food-main">
+          <strong>${escapeHtml(food.icon || "🍽️")} ${escapeHtml(food.name)}</strong>
+          <span class="food-meta">
+            <span class="food-meta-chip">${escapeHtml(food.category)}</span>
+            <span class="food-meta-chip">${calories} kcal/100g</span>
+          </span>
+        </div>
         <div class="food-actions">
           <button class="button secondary compact" type="button" data-action="toggle-favorite" data-food-id="${escapeAttr(food.id)}">${favoriteLabel}</button>
           <button class="icon-button" type="button" aria-label="编辑食物" data-action="edit-food" data-food-id="${escapeAttr(food.id)}">✎</button>

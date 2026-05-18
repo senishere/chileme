@@ -543,6 +543,38 @@ h1 {
   margin-bottom: 8px;
 }
 
+.food-main {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.food-main strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.food-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.food-meta-chip {
+  max-width: 100%;
+  min-height: 22px;
+  border-radius: 999px;
+  background: #f6f1e7;
+  color: var(--muted);
+  padding: 3px 8px;
+  font-size: 11px;
+  line-height: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .food-actions {
   display: flex;
   align-items: center;
@@ -561,6 +593,8 @@ h1 {
 }
 
 .icon-picker button {
+  display: grid;
+  place-items: center;
   min-width: 0;
   min-height: 42px;
   border: 1px solid var(--line);
