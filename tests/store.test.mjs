@@ -68,6 +68,69 @@ test("normalizes partial imported state", () => {
   assert.equal(typeof normalized.dailyGoal, "object");
 });
 
+test("normalizes malformed entries and water entries", () => {
+  const normalized = normalizeState({
+    entries: [
+      {
+        id: "entry_valid",
+        timestamp: "2026-05-18T12:00:00+08:00",
+        items: [
+          {
+            foodId: "food_rice",
+            portionId: "portion_rice_fist",
+            label: 123,
+            grams: "150",
+            nutrition: { calories: "174", protein: 3.9, carbs: null, fat: -1 }
+          },
+          {
+            foodId: "food_bad",
+            grams: -25,
+            nutrition: { calories: 99 }
+          }
+        ],
+        note: 42,
+        photo: null
+      },
+      {
+        id: "entry_bad_timestamp",
+        timestamp: "not a date",
+        items: []
+      },
+      {
+        id: "entry_bad_items",
+        timestamp: "2026-05-18T12:00:00+08:00",
+        items: "bad"
+      }
+    ],
+    waterEntries: [
+      { id: "water_valid", timestamp: "2026-05-18T09:00:00+08:00", milliliters: "300" },
+      { id: "water_bad_timestamp", timestamp: "bad", milliliters: 300 },
+      { id: "water_bad_amount", timestamp: "2026-05-18T09:00:00+08:00", milliliters: -50 }
+    ]
+  });
+
+  assert.deepEqual(normalized.entries, [
+    {
+      id: "entry_valid",
+      timestamp: "2026-05-18T12:00:00+08:00",
+      items: [
+        {
+          foodId: "food_rice",
+          portionId: "portion_rice_fist",
+          label: "150g",
+          grams: 150,
+          nutrition: { calories: 174, protein: 3.9, carbs: 0, fat: 0 }
+        }
+      ],
+      note: "",
+      photo: ""
+    }
+  ]);
+  assert.deepEqual(normalized.waterEntries, [
+    { id: "water_valid", timestamp: "2026-05-18T09:00:00+08:00", milliliters: 300 }
+  ]);
+});
+
 test("normalizes invalid calibration and goal leaf values", () => {
   const defaults = createDefaultState();
   const normalized = normalizeState({

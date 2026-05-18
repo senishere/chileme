@@ -4,6 +4,8 @@ import {
   dateKey,
   findFood,
   findPortion,
+  nonNegativeFiniteNumber,
+  positiveFiniteNumber,
   portionsForFood,
   sevenDayStats,
   summarizeDay
@@ -327,7 +329,7 @@ async function handleEntrySubmit(form) {
   const portion = findPortion(state, String(data.get("portionId")));
   if (!food) return;
 
-  const grams = Number(data.get("grams")) || portion?.grams || 0;
+  const grams = positiveFiniteNumber(data.get("grams"), positiveFiniteNumber(portion?.grams, 0));
   const item = buildEntryItem(food, portion, grams);
   const photo = await readImage(form.photo.files[0]);
   state.entries.push({
@@ -349,7 +351,7 @@ async function handleFoodSubmit(form) {
   const portionId = createId("portion");
   const image = await readImage(form.image.files[0]);
   const kind = String(data.get("kind") || "regular");
-  const grams = Number(data.get("grams")) || 100;
+  const grams = positiveFiniteNumber(data.get("grams"), 100);
   const food = {
     id: foodId,
     name: String(data.get("name") || "未命名"),
@@ -361,10 +363,10 @@ async function handleFoodSubmit(form) {
     servingGrams: grams,
     packageGrams: grams,
     nutrition: {
-      calories: Number(data.get("calories")) || 0,
-      protein: Number(data.get("protein")) || 0,
-      carbs: Number(data.get("carbs")) || 0,
-      fat: Number(data.get("fat")) || 0
+      calories: nonNegativeFiniteNumber(data.get("calories"), 0),
+      protein: nonNegativeFiniteNumber(data.get("protein"), 0),
+      carbs: nonNegativeFiniteNumber(data.get("carbs"), 0),
+      fat: nonNegativeFiniteNumber(data.get("fat"), 0)
     },
     defaultPortionId: portionId,
     quickAdd: true
@@ -399,8 +401,12 @@ function importJson() {
   input.addEventListener("change", async () => {
     const file = input.files[0];
     if (!file) return;
-    state = importState(await file.text());
-    saveAndRender();
+    try {
+      state = importState(await file.text());
+      saveAndRender();
+    } catch (error) {
+      alert(error.message);
+    }
   });
   input.click();
 }

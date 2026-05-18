@@ -133,3 +133,17 @@ test("finds foods and portions and builds an entry item", () => {
     nutrition: { calories: 174, protein: 3.9, carbs: 38.85, fat: 0.45 }
   });
 });
+
+test("builds entry items with positive grams fallback", () => {
+  const state = createDefaultState();
+  const food = findFood(state, "food_rice");
+  const portion = findPortion(state, "portion_rice_fist");
+
+  assert.deepEqual(buildEntryItem(food, portion, -50), {
+    foodId: "food_rice",
+    portionId: "portion_rice_fist",
+    label: "1拳",
+    grams: 150,
+    nutrition: { calories: 174, protein: 3.9, carbs: 38.85, fat: 0.45 }
+  });
+});

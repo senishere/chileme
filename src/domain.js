@@ -9,11 +9,21 @@ export function roundMetric(value) {
   return Math.round((Number(value) || 0) * 100) / 100;
 }
 
+export function positiveFiniteNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : fallback;
+}
+
+export function nonNegativeFiniteNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : fallback;
+}
+
 export function calculateItemNutrition(food, grams) {
-  const safeGrams = Number(grams) || 0;
+  const safeGrams = positiveFiniteNumber(grams, 0);
   const nutrition = food?.nutrition || EMPTY_NUTRITION;
   const divisor = food?.nutritionMode === "perServing"
-    ? Number(food.servingGrams) || 1
+    ? positiveFiniteNumber(food.servingGrams, 1)
     : 100;
   const ratio = safeGrams / divisor;
 
@@ -175,7 +185,7 @@ export function portionsForFood(state, foodId) {
 }
 
 export function buildEntryItem(food, portion, gramsOverride) {
-  const grams = Number(gramsOverride || portion?.grams || 0);
+  const grams = positiveFiniteNumber(gramsOverride, positiveFiniteNumber(portion?.grams, 0));
   return {
     foodId: food.id,
     portionId: portion?.id || "",
