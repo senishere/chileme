@@ -43,6 +43,22 @@ test("calculates package nutrition by serving ratio", () => {
   });
 });
 
+test("calculates packaged food nutrition by package ratio", () => {
+  const food = {
+    id: "food_chips",
+    nutritionMode: "perPackage",
+    packageGrams: 200,
+    nutrition: { calories: 500, protein: 8, carbs: 60, fat: 25 }
+  };
+
+  assert.deepEqual(calculateItemNutrition(food, 50), {
+    calories: 125,
+    protein: 2,
+    carbs: 15,
+    fat: 6.25
+  });
+});
+
 test("summarizes entries and water for one local day", () => {
   const state = createDefaultState();
   const day = "2026-05-18";

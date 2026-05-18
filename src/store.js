@@ -6,6 +6,7 @@ import {
 } from "./domain.js";
 
 export const STORAGE_KEY = "chileme.state.v1";
+export const MAX_STORED_DATA_URL_BYTES = 900 * 1024;
 
 function normalizePositiveNumber(value, fallback) {
   const number = typeof value === "number"
@@ -50,10 +51,16 @@ function normalizeDailyGoal(dailyGoal, defaults) {
 
   return {
     ...defaults.dailyGoal,
-    calories: normalizePositiveNumber(dailyGoal.calories, defaults.dailyGoal.calories),
-    protein: normalizePositiveNumber(dailyGoal.protein, defaults.dailyGoal.protein),
-    waterMl: normalizePositiveNumber(dailyGoal.waterMl, defaults.dailyGoal.waterMl)
+    calories: normalizeGoalValue(dailyGoal.calories, defaults.dailyGoal.calories),
+    protein: normalizeGoalValue(dailyGoal.protein, defaults.dailyGoal.protein),
+    waterMl: normalizeGoalValue(dailyGoal.waterMl, defaults.dailyGoal.waterMl)
   };
+}
+
+function normalizeGoalValue(value, fallback) {
+  if (value === null || value === 0) return null;
+  if (typeof value === "string" && value.trim() === "") return null;
+  return normalizePositiveNumber(value, fallback);
 }
 
 function isValidTimestamp(value) {
@@ -70,6 +77,15 @@ function normalizeNutrition(nutrition) {
     carbs: nonNegativeFiniteNumber(nutrition.carbs, 0),
     fat: nonNegativeFiniteNumber(nutrition.fat, 0)
   };
+}
+
+function dataUrlBytes(value) {
+  return typeof value === "string" ? value.length : 0;
+}
+
+function normalizeDataUrl(value) {
+  if (typeof value !== "string") return "";
+  return dataUrlBytes(value) <= MAX_STORED_DATA_URL_BYTES ? value : "";
 }
 
 function normalizeEntryItems(items) {
@@ -113,7 +129,7 @@ function normalizeEntries(entries) {
       timestamp: entry.timestamp,
       items,
       note: typeof entry.note === "string" ? entry.note : "",
-      photo: typeof entry.photo === "string" ? entry.photo : ""
+      photo: normalizeDataUrl(entry.photo)
     }];
   });
 }
@@ -148,6 +164,21 @@ export function normalizeState(input) {
   };
 }
 
+function stripEntryPhotos(state) {
+  let droppedPhotos = false;
+  const entries = state.entries.map((entry) => {
+    if (!entry.photo) return entry;
+    droppedPhotos = true;
+    return { ...entry, photo: "" };
+  });
+  return { state: { ...state, entries }, droppedPhotos };
+}
+
+function hasOversizedEntryPhoto(state) {
+  return Array.isArray(state?.entries)
+    && state.entries.some((entry) => dataUrlBytes(entry?.photo) > MAX_STORED_DATA_URL_BYTES);
+}
+
 export function createStore(storage = globalThis.localStorage) {
   return {
     load() {
@@ -169,7 +200,18 @@ export function createStore(storage = globalThis.localStorage) {
       if (!storage) {
         throw new Error("当前浏览器无法保存数据");
       }
-      storage.setItem(STORAGE_KEY, JSON.stringify(normalizeState(state)));
+      const normalized = normalizeState(state);
+      let droppedPhotos = hasOversizedEntryPhoto(state);
+      try {
+        storage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+        return { state: normalized, droppedPhotos };
+      } catch (error) {
+        const stripped = stripEntryPhotos(normalized);
+        droppedPhotos = stripped.droppedPhotos;
+        if (!droppedPhotos) throw error;
+        storage.setItem(STORAGE_KEY, JSON.stringify(stripped.state));
+        return { state: stripped.state, droppedPhotos };
+      }
     },
     clear() {
       if (storage) storage.removeItem(STORAGE_KEY);

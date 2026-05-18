@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createDefaultState } from "../src/domain.js";
 import {
+  MAX_STORED_DATA_URL_BYTES,
   createStore,
   exportState,
   importState,
@@ -199,8 +200,39 @@ test("normalizes non-positive calibration and goal numbers", () => {
   assert.equal(normalized.calibration.palmWidthCm, defaults.calibration.palmWidthCm);
   assert.equal(normalized.calibration.fingerWidthCm, 2.2);
   assert.equal(normalized.dailyGoal.calories, defaults.dailyGoal.calories);
-  assert.equal(normalized.dailyGoal.protein, defaults.dailyGoal.protein);
+  assert.equal(normalized.dailyGoal.protein, null);
   assert.equal(normalized.dailyGoal.waterMl, 2100);
+});
+
+test("preserves unset daily goals through normalization", () => {
+  const normalized = normalizeState({
+    dailyGoal: {
+      calories: null,
+      protein: 0,
+      waterMl: ""
+    }
+  });
+
+  assert.deepEqual(normalized.dailyGoal, {
+    calories: null,
+    protein: null,
+    waterMl: null
+  });
+});
+
+test("preserves unset daily goals through save and load", () => {
+  const storage = memoryStorage();
+  const store = createStore(storage);
+  const state = createDefaultState();
+  state.dailyGoal = { calories: null, protein: null, waterMl: 1800 };
+
+  store.save(state);
+
+  assert.deepEqual(createStore(storage).load().dailyGoal, {
+    calories: null,
+    protein: null,
+    waterMl: 1800
+  });
 });
 
 test("rejects nonnumeric JSON values for positive numbers", () => {
@@ -232,7 +264,62 @@ test("rejects nonnumeric JSON values for positive numbers", () => {
   ]);
   assert.equal(normalized.dailyGoal.calories, defaults.dailyGoal.calories);
   assert.equal(normalized.dailyGoal.protein, defaults.dailyGoal.protein);
-  assert.equal(normalized.dailyGoal.waterMl, defaults.dailyGoal.waterMl);
+  assert.equal(normalized.dailyGoal.waterMl, null);
+});
+
+test("save retries without entry photos when storage quota rejects the full state", () => {
+  const storage = memoryStorage();
+  let attempts = 0;
+  storage.setItem = (key, value) => {
+    attempts += 1;
+    if (attempts === 1) {
+      const error = new Error("Quota exceeded");
+      error.name = "QuotaExceededError";
+      throw error;
+    }
+    memoryStorage().setItem(key, value);
+    storage.savedKey = key;
+    storage.savedValue = value;
+  };
+  storage.getItem = (key) => key === storage.savedKey ? storage.savedValue : null;
+  const store = createStore(storage);
+  const state = createDefaultState();
+  state.entries.push({
+    id: "entry_photo",
+    timestamp: "2026-05-18T12:00:00+08:00",
+    items: [],
+    note: "keep me",
+    photo: `data:image/jpeg;base64,${"a".repeat(200)}`
+  });
+
+  const result = store.save(state);
+  const loaded = createStore(storage).load();
+
+  assert.equal(attempts, 2);
+  assert.equal(result.droppedPhotos, true);
+  assert.equal(loaded.entries[0].id, "entry_photo");
+  assert.equal(loaded.entries[0].note, "keep me");
+  assert.equal(loaded.entries[0].photo, "");
+});
+
+test("save reports oversized entry photos dropped during normalization", () => {
+  const storage = memoryStorage();
+  const store = createStore(storage);
+  const state = createDefaultState();
+  state.entries.push({
+    id: "entry_oversized",
+    timestamp: "2026-05-18T12:00:00+08:00",
+    items: [],
+    note: "",
+    photo: `data:image/jpeg;base64,${"a".repeat(MAX_STORED_DATA_URL_BYTES)}`
+  });
+
+  const result = store.save(state);
+  const loaded = createStore(storage).load();
+
+  assert.equal(result.droppedPhotos, true);
+  assert.equal(loaded.entries[0].id, "entry_oversized");
+  assert.equal(loaded.entries[0].photo, "");
 });
 
 test("exports and imports JSON state", () => {

@@ -24,7 +24,9 @@ export function calculateItemNutrition(food, grams) {
   const nutrition = food?.nutrition || EMPTY_NUTRITION;
   const divisor = food?.nutritionMode === "perServing"
     ? positiveFiniteNumber(food.servingGrams, 1)
-    : 100;
+    : food?.nutritionMode === "perPackage"
+      ? positiveFiniteNumber(food.packageGrams, 1)
+      : 100;
   const ratio = safeGrams / divisor;
 
   return {

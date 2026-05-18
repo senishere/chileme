@@ -10,12 +10,21 @@ import {
   sevenDayStats,
   summarizeDay
 } from "./domain.js";
-import { createStore, exportState, importState } from "./store.js";
+import {
+  MAX_STORED_DATA_URL_BYTES,
+  createStore,
+  exportState,
+  importState
+} from "./store.js";
+
+const IMAGE_MAX_DIMENSION = 1200;
+const IMAGE_QUALITY = 0.72;
 
 const store = createStore();
 let state = store.load();
 let currentView = "today";
 let selectedFoodId = "";
+let entryDraft = null;
 
 const root = document.querySelector("#view-root");
 const modalRoot = document.querySelector("#modal-root");
@@ -35,8 +44,16 @@ function escapeAttr(value) {
 }
 
 function saveAndRender() {
-  store.save(state);
-  render();
+  try {
+    const result = store.save(state);
+    if (result?.state) state = result.state;
+    render();
+    if (result?.droppedPhotos) {
+      alert("存储空间不足，记录已保存，但照片没有保存。");
+    }
+  } catch (error) {
+    alert(error.message || "保存失败，请导出数据后清理本地空间。");
+  }
 }
 
 function formatNumber(value, digits = 0) {
@@ -141,7 +158,10 @@ function renderTimeline(day) {
           <p class="entry-meta">${escapeHtml(portions)} · 约 ${formatNumber(calories)} kcal</p>
           ${entry.note ? `<p class="entry-meta">${escapeHtml(entry.note)}</p>` : ""}
         </div>
-        <button class="icon-button" type="button" aria-label="删除记录" data-action="delete-entry" data-entry-id="${escapeAttr(entry.id)}">×</button>
+        <div class="entry-actions">
+          <button class="icon-button" type="button" aria-label="编辑记录" data-action="edit-entry" data-entry-id="${escapeAttr(entry.id)}">✎</button>
+          <button class="icon-button" type="button" aria-label="删除记录" data-action="delete-entry" data-entry-id="${escapeAttr(entry.id)}">×</button>
+        </div>
       </article>
     `;
   }).join("");
@@ -249,19 +269,77 @@ function closeModal() {
   modalRoot.hidden = true;
   modalRoot.innerHTML = "";
   selectedFoodId = "";
+  entryDraft = null;
 }
 
-function openEntryModal(foodId = "") {
-  selectedFoodId = foodId || state.foods[0]?.id || "";
+function cloneEntryItems(items) {
+  return (items || []).map((item) => ({
+    ...item,
+    nutrition: { ...(item.nutrition || {}) }
+  }));
+}
+
+function createDraftItem(foodId, portionId = "", gramsValue = "") {
+  const food = findFood(state, foodId);
+  const portions = portionsForFood(state, foodId);
+  const portion = findPortion(state, portionId) || findPortion(state, food?.defaultPortionId) || portions[0];
+  if (!food) return null;
+  const grams = positiveFiniteNumber(gramsValue, positiveFiniteNumber(portion?.grams, 100));
+  return buildEntryItem(food, portion, grams);
+}
+
+function draftTitle() {
+  return entryDraft?.entryId ? "编辑记录" : "记录刚吃的";
+}
+
+function renderPortionOptions(foodId, selectedPortionId = "") {
+  const activeFoodId = foodId || selectedFoodId;
+  const activeFood = findFood(state, activeFoodId);
+  const portions = portionsForFood(state, activeFoodId);
+  const defaultPortion = findPortion(state, selectedPortionId)
+    || findPortion(state, activeFood?.defaultPortionId)
+    || portions[0];
+
+  return portions.map((portion) => `
+    <option value="${escapeAttr(portion.id)}" ${portion.id === defaultPortion?.id ? "selected" : ""}>${escapeHtml(portion.label)} · ${formatNumber(portion.grams, 1)}g</option>
+  `).join("");
+}
+
+function renderDraftItems() {
+  if (!entryDraft?.items?.length) {
+    return `<div class="empty compact">还没有加入食物</div>`;
+  }
+
+  return entryDraft.items.map((item, index) => {
+    const food = findFood(state, item.foodId);
+    return `
+      <article class="food-row">
+        <div>
+          <strong>${escapeHtml(foodLabel(food))}</strong>
+          <br><span class="hint">${escapeHtml(portionLabel(state, item))} · ${formatNumber(item.grams, 1)}g · ${formatNumber(item.nutrition?.calories)} kcal</span>
+        </div>
+        <button class="icon-button" type="button" aria-label="移除食物" data-action="remove-draft-item" data-index="${index}">×</button>
+      </article>
+    `;
+  }).join("");
+}
+
+function updateEntryDraftFromForm(form) {
+  if (!entryDraft || !form) return;
+  const data = new FormData(form);
+  entryDraft.note = String(data.get("note") || "");
+}
+
+function renderEntryModal() {
   const food = findFood(state, selectedFoodId);
   const portions = portionsForFood(state, selectedFoodId);
   const defaultPortion = findPortion(state, food?.defaultPortionId) || portions[0];
 
   modalRoot.hidden = false;
   modalRoot.innerHTML = `
-    <section class="sheet" role="dialog" aria-modal="true" aria-label="添加记录">
+    <section class="sheet" role="dialog" aria-modal="true" aria-label="${escapeAttr(draftTitle())}">
       <div class="section-head">
-        <h2>记录刚吃的</h2>
+        <h2>${escapeHtml(draftTitle())}</h2>
         <button class="icon-button" type="button" data-action="close-modal">×</button>
       </div>
       <form class="form-grid" data-action="save-entry">
@@ -274,16 +352,40 @@ function openEntryModal(foodId = "") {
         <label class="field">
           <span>份量</span>
           <select name="portionId">
-            ${portions.map((portion) => `<option value="${escapeAttr(portion.id)}" ${portion.id === defaultPortion?.id ? "selected" : ""}>${escapeHtml(portion.label)} · ${formatNumber(portion.grams, 1)}g</option>`).join("")}
+            ${renderPortionOptions(selectedFoodId)}
           </select>
         </label>
         <label class="field"><span>自定义克数</span><input name="grams" inputmode="decimal" value="${escapeAttr(defaultPortion?.grams || 100)}"></label>
-        <label class="field"><span>备注</span><textarea name="note" rows="2" placeholder="可选"></textarea></label>
+        <button class="button secondary" type="button" data-action="add-draft-item">加入记录</button>
+        <div class="draft-list" aria-label="已加入食物">${renderDraftItems()}</div>
+        <label class="field"><span>备注</span><textarea name="note" rows="2" placeholder="可选">${escapeHtml(entryDraft?.note || "")}</textarea></label>
+        ${entryDraft?.photo ? `<div class="photo-preview"><span class="entry-thumb"><img alt="" src="${escapeAttr(entryDraft.photo)}"></span><span class="hint">已保存照片</span></div>` : ""}
         <label class="field"><span>照片，只用于回忆</span><input name="photo" type="file" accept="image/*"></label>
         <button class="button" type="submit">保存记录</button>
       </form>
     </section>
   `;
+}
+
+function openEntryModal(foodId = "", entryId = "") {
+  const existing = entryId ? state.entries.find((entry) => entry.id === entryId) : null;
+  selectedFoodId = foodId || existing?.items?.[0]?.foodId || state.foods[0]?.id || "";
+  entryDraft = existing
+    ? {
+        entryId: existing.id,
+        timestamp: existing.timestamp,
+        items: cloneEntryItems(existing.items),
+        note: existing.note || "",
+        photo: existing.photo || ""
+      }
+    : {
+        entryId: "",
+        timestamp: "",
+        items: foodId ? [createDraftItem(selectedFoodId)].filter(Boolean) : [],
+        note: "",
+        photo: ""
+      };
+  renderEntryModal();
 }
 
 function openFoodForm() {
@@ -298,9 +400,12 @@ function openFoodForm() {
         <label class="field"><span>名称</span><input name="name" required placeholder="例如 牛奶"></label>
         <label class="field"><span>分类</span><input name="category" value="常吃"></label>
         <label class="field"><span>类型</span><select name="kind"><option value="regular">常规食物</option><option value="packaged">包装食品</option></select></label>
+        <label class="field"><span>营养标注方式</span><select name="nutritionMode"><option value="per100g">每 100g</option><option value="perServing">每份</option><option value="perPackage">整包</option></select></label>
         <label class="field"><span>默认份量名称</span><input name="portionLabel" value="1份"></label>
         <label class="field"><span>默认份量克数</span><input name="grams" inputmode="decimal" value="100"></label>
-        <label class="field"><span>热量 kcal / 100g 或每份</span><input name="calories" inputmode="decimal" value="0"></label>
+        <label class="field"><span>每份克数</span><input name="servingGrams" inputmode="decimal" value="100"></label>
+        <label class="field"><span>整包克数</span><input name="packageGrams" inputmode="decimal" value="100"></label>
+        <label class="field"><span>热量 kcal</span><input name="calories" inputmode="decimal" value="0"></label>
         <label class="field"><span>蛋白质 g</span><input name="protein" inputmode="decimal" value="0"></label>
         <label class="field"><span>碳水 g</span><input name="carbs" inputmode="decimal" value="0"></label>
         <label class="field"><span>脂肪 g</span><input name="fat" inputmode="decimal" value="0"></label>
@@ -311,7 +416,46 @@ function openFoodForm() {
   `;
 }
 
-function readImage(file) {
+function dataUrlTooLarge(dataUrl) {
+  return String(dataUrl || "").length > MAX_STORED_DATA_URL_BYTES;
+}
+
+function loadImageElement(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("无法读取图片"));
+    };
+    image.src = url;
+  });
+}
+
+async function compressImage(file) {
+  const image = await loadImageElement(file);
+  const ratio = Math.min(
+    1,
+    IMAGE_MAX_DIMENSION / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height)
+  );
+  const width = Math.max(1, Math.round((image.naturalWidth || image.width) * ratio));
+  const height = Math.max(1, Math.round((image.naturalHeight || image.height) * ratio));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  context.drawImage(image, 0, 0, width, height);
+
+  const webp = canvas.toDataURL("image/webp", IMAGE_QUALITY);
+  if (webp.startsWith("data:image/webp")) return webp;
+  return canvas.toDataURL("image/jpeg", IMAGE_QUALITY);
+}
+
+function readRawImage(file) {
   return new Promise((resolve) => {
     if (!file) {
       resolve("");
@@ -324,26 +468,65 @@ function readImage(file) {
   });
 }
 
-async function handleEntrySubmit(form) {
-  const data = new FormData(form);
-  const food = findFood(state, String(data.get("foodId")));
-  const portion = findPortion(state, String(data.get("portionId")));
-  if (!food) return;
+async function readImage(file) {
+  if (!file) return { dataUrl: "", dropped: false };
+  let dataUrl = "";
+  try {
+    dataUrl = await compressImage(file);
+  } catch (error) {
+    dataUrl = await readRawImage(file);
+  }
 
-  const grams = positiveFiniteNumber(data.get("grams"), positiveFiniteNumber(portion?.grams, 0));
-  const item = buildEntryItem(food, portion, grams);
-  const photo = await readImage(form.photo.files[0]);
-  state.entries.push({
-    id: createId("entry"),
-    timestamp: new Date().toISOString(),
-    items: [item],
-    note: String(data.get("note") || ""),
+  if (!dataUrl || dataUrlTooLarge(dataUrl)) {
+    return { dataUrl: "", dropped: Boolean(dataUrl) };
+  }
+  return { dataUrl, dropped: false };
+}
+
+function goalInputValue(value) {
+  const text = String(value ?? "").trim();
+  if (text === "") return null;
+  const number = Number(text);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+async function handleEntrySubmit(form) {
+  updateEntryDraftFromForm(form);
+  if (!entryDraft) return;
+  if (!entryDraft.items.length) {
+    const data = new FormData(form);
+    const item = createDraftItem(
+      String(data.get("foodId")),
+      String(data.get("portionId")),
+      data.get("grams")
+    );
+    if (item) entryDraft.items.push(item);
+  }
+  if (!entryDraft.items.length) {
+    alert("请先加入至少一种食物。");
+    return;
+  }
+
+  const image = await readImage(form.photo.files[0]);
+  const photo = image.dataUrl || entryDraft.photo || "";
+  const entry = {
+    id: entryDraft.entryId || createId("entry"),
+    timestamp: entryDraft.timestamp || new Date().toISOString(),
+    items: cloneEntryItems(entryDraft.items),
+    note: entryDraft.note,
     photo
-  });
+  };
+
+  if (entryDraft.entryId) {
+    state.entries = state.entries.map((existing) => existing.id === entryDraft.entryId ? entry : existing);
+  } else {
+    state.entries.push(entry);
+  }
 
   closeModal();
   currentView = "today";
   saveAndRender();
+  if (image.dropped) alert("照片过大，记录已保存但不保存照片。");
 }
 
 async function handleFoodSubmit(form) {
@@ -353,16 +536,19 @@ async function handleFoodSubmit(form) {
   const image = await readImage(form.image.files[0]);
   const kind = String(data.get("kind") || "regular");
   const grams = positiveFiniteNumber(data.get("grams"), 100);
+  const nutritionMode = String(data.get("nutritionMode") || "per100g");
+  const servingGrams = positiveFiniteNumber(data.get("servingGrams"), grams);
+  const packageGrams = positiveFiniteNumber(data.get("packageGrams"), grams);
   const food = {
     id: foodId,
     name: String(data.get("name") || "未命名"),
     category: String(data.get("category") || "常吃"),
     kind,
     emoji: "🍽️",
-    image,
-    nutritionMode: kind === "packaged" ? "perServing" : "per100g",
-    servingGrams: grams,
-    packageGrams: grams,
+    image: image.dataUrl,
+    nutritionMode: kind === "packaged" ? nutritionMode : "per100g",
+    servingGrams,
+    packageGrams,
     nutrition: {
       calories: nonNegativeFiniteNumber(data.get("calories"), 0),
       protein: nonNegativeFiniteNumber(data.get("protein"), 0),
@@ -383,6 +569,7 @@ async function handleFoodSubmit(form) {
   closeModal();
   currentView = "foods";
   saveAndRender();
+  if (image.dropped) alert("图片过大，食物已保存但不保存图片。");
 }
 
 function exportJson() {
@@ -424,6 +611,7 @@ document.addEventListener("click", (event) => {
 
   const action = target.dataset.action;
   if (action === "open-entry") openEntryModal(target.dataset.foodId || "");
+  if (action === "edit-entry") openEntryModal("", target.dataset.entryId || "");
   if (action === "show-foods") {
     currentView = "foods";
     render();
@@ -438,6 +626,25 @@ document.addEventListener("click", (event) => {
   }
   if (action === "open-food-form") openFoodForm();
   if (action === "close-modal") closeModal();
+  if (action === "add-draft-item") {
+    const form = target.closest("form");
+    updateEntryDraftFromForm(form);
+    const data = new FormData(form);
+    const item = createDraftItem(
+      String(data.get("foodId")),
+      String(data.get("portionId")),
+      data.get("grams")
+    );
+    if (item) entryDraft.items.push(item);
+    renderEntryModal();
+  }
+  if (action === "remove-draft-item") {
+    const form = target.closest("form");
+    updateEntryDraftFromForm(form);
+    const index = Number(target.dataset.index);
+    if (Number.isInteger(index)) entryDraft.items.splice(index, 1);
+    renderEntryModal();
+  }
   if (action === "delete-entry") {
     state.entries = state.entries.filter((entry) => entry.id !== target.dataset.entryId);
     saveAndRender();
@@ -470,9 +677,9 @@ document.addEventListener("submit", async (event) => {
       capacityMl: 350
     };
     state.dailyGoal = {
-      calories: Number(data.get("calories")) || 0,
-      protein: Number(data.get("protein")) || 0,
-      waterMl: Number(data.get("waterMl")) || 0
+      calories: goalInputValue(data.get("calories")),
+      protein: goalInputValue(data.get("protein")),
+      waterMl: goalInputValue(data.get("waterMl"))
     };
     state.calibration = {
       ...state.calibration,
@@ -496,7 +703,14 @@ document.addEventListener("submit", async (event) => {
 modalRoot.addEventListener("change", (event) => {
   const select = event.target.closest('select[name="foodId"]');
   if (!select) return;
-  openEntryModal(select.value);
+  const form = select.closest("form");
+  updateEntryDraftFromForm(form);
+  selectedFoodId = select.value;
+  const portions = portionsForFood(state, selectedFoodId);
+  const defaultPortion = findPortion(state, findFood(state, selectedFoodId)?.defaultPortionId) || portions[0];
+  const portionSelect = form.elements.portionId;
+  portionSelect.innerHTML = renderPortionOptions(selectedFoodId);
+  form.elements.grams.value = defaultPortion?.grams || 100;
 });
 
 render();
