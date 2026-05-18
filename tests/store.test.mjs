@@ -140,6 +140,38 @@ test("normalizes non-positive calibration and goal numbers", () => {
   assert.equal(normalized.dailyGoal.waterMl, 2100);
 });
 
+test("rejects nonnumeric JSON values for positive numbers", () => {
+  const defaults = createDefaultState();
+  const normalized = normalizeState({
+    calibration: {
+      fistWidthCm: true,
+      palmWidthCm: [],
+      fingerWidthCm: {},
+      containers: [
+        { id: "container_bool", label: "布尔杯", capacityMl: true },
+        { id: "container_empty", label: "空杯", capacityMl: "" },
+        { id: "container_space", label: "空白杯", capacityMl: "   " },
+        { id: "container_valid", label: "水杯", capacityMl: "250" }
+      ]
+    },
+    dailyGoal: {
+      calories: true,
+      protein: [],
+      waterMl: "   "
+    }
+  });
+
+  assert.equal(normalized.calibration.fistWidthCm, defaults.calibration.fistWidthCm);
+  assert.equal(normalized.calibration.palmWidthCm, defaults.calibration.palmWidthCm);
+  assert.equal(normalized.calibration.fingerWidthCm, defaults.calibration.fingerWidthCm);
+  assert.deepEqual(normalized.calibration.containers, [
+    { id: "container_valid", label: "水杯", capacityMl: 250 }
+  ]);
+  assert.equal(normalized.dailyGoal.calories, defaults.dailyGoal.calories);
+  assert.equal(normalized.dailyGoal.protein, defaults.dailyGoal.protein);
+  assert.equal(normalized.dailyGoal.waterMl, defaults.dailyGoal.waterMl);
+});
+
 test("exports and imports JSON state", () => {
   const state = createDefaultState();
   state.entries.push({

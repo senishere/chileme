@@ -3,9 +3,11 @@ import { createDefaultState } from "./domain.js";
 export const STORAGE_KEY = "chileme.state.v1";
 
 function normalizePositiveNumber(value, fallback) {
-  const number = typeof value === "string" && value.trim() === ""
-    ? NaN
-    : Number(value);
+  const number = typeof value === "number"
+    ? value
+    : typeof value === "string" && value.trim() !== ""
+      ? Number(value)
+      : NaN;
   return Number.isFinite(number) && number > 0 ? number : fallback;
 }
 
