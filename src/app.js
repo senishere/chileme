@@ -145,7 +145,7 @@ function renderSummary(day) {
 }
 
 function statusLabel(status) {
-  if (status === "severe-low") return "偏少";
+  if (status === "severe-low") return "严重不足";
   if (status === "low") return "不足";
   if (status === "normal") return "正常";
   if (status === "high") return "偏高";
@@ -513,6 +513,8 @@ function openFoodForm(foodId = "") {
 }
 
 function openCategoryManager() {
+  const icon = ICON_OPTIONS["其他"]?.[0] || "🍽️";
+
   modalRoot.hidden = false;
   modalRoot.innerHTML = `
     <section class="sheet" role="dialog" aria-modal="true" aria-label="管理分类">
@@ -521,7 +523,11 @@ function openCategoryManager() {
         <button class="icon-button" type="button" data-action="close-modal">×</button>
       </div>
       <form class="category-add" data-action="add-category">
+        <input type="hidden" name="icon" value="${escapeAttr(icon)}">
         <label class="field"><span>新分类</span><input name="categoryName" required placeholder="例如 备餐"></label>
+        <div class="icon-picker" role="listbox" aria-label="分类图标">
+          ${Object.values(ICON_OPTIONS).flat().map((option) => `<button class="${option === icon ? "active" : ""}" type="button" data-action="select-category-icon" data-icon="${escapeAttr(option)}">${escapeHtml(option)}</button>`).join("")}
+        </div>
         <button class="button" type="submit">添加</button>
       </form>
       <div class="category-list">
@@ -815,6 +821,15 @@ document.addEventListener("click", (event) => {
       });
     }
   }
+  if (action === "select-category-icon") {
+    const form = target.closest("form");
+    if (form?.elements.icon) {
+      form.elements.icon.value = target.dataset.icon || "🍽️";
+      form.querySelectorAll('[data-action="select-category-icon"]').forEach((button) => {
+        button.classList.toggle("active", button === target);
+      });
+    }
+  }
   if (action === "close-modal") closeModal();
   if (action === "add-draft-item") {
     const form = target.closest("form");
@@ -868,7 +883,7 @@ document.addEventListener("submit", async (event) => {
   if (action === "add-category") {
     const data = new FormData(form);
     try {
-      state = addCategory(state, data.get("categoryName"));
+      state = addCategory(state, data.get("categoryName"), data.get("icon"));
       saveAndRender();
       openCategoryManager();
     } catch (error) {

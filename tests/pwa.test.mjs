@@ -74,6 +74,30 @@ test("app exposes simplified recording and food editing contracts", () => {
   assert.doesNotMatch(app, /默认份量|营养标注方式|每份重量|整包重量|液体密度|拳头宽度|掌心宽度|手指宽度|常用容器/);
 });
 
+test("domain no longer exports temporary portion compatibility helpers", () => {
+  const domain = readText("../src/domain.js");
+
+  assert.doesNotMatch(domain, /export function \w*portion\w*/i);
+});
+
+test("category manager supports selecting default category icons", () => {
+  const app = readText("../src/app.js");
+  const categoryManagerBlock = app.match(/function openCategoryManager\(\) \{[\s\S]*?function dataUrlTooLarge/)?.[0] || "";
+
+  assert.ok(categoryManagerBlock);
+  assert.match(categoryManagerBlock, /name="icon"/);
+  assert.match(categoryManagerBlock, /data-action="select-category-icon"/);
+  assert.match(categoryManagerBlock, /ICON_OPTIONS/);
+  assert.match(app, /action === "select-category-icon"/);
+  assert.match(app, /addCategory\(state, data\.get\("categoryName"\), data\.get\("icon"\)\)/);
+});
+
+test("today structure labels severe low status as serious shortage", () => {
+  const app = readText("../src/app.js");
+
+  assert.match(app, /status === "severe-low"\)\s+return "严重不足"/);
+});
+
 test("timeline source does not render sodium", () => {
   const app = readText("../src/app.js");
   const timelineBlock = app.match(/function renderTimeline\([\s\S]*?function renderToday/)?.[0] || "";

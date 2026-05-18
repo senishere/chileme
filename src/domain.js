@@ -103,7 +103,7 @@ const DEFAULT_FOODS = [
   food("food_milk", "牛奶", "奶", "🥛", { calories: 61, protein: 3.2, carbs: 4.8, fat: 3.3, sodium: 42 }),
   food("food_skim_milk", "脱脂牛奶", "奶", "🥛", { calories: 34, protein: 3.4, carbs: 5, fat: 0.1, sodium: 42 }),
   food("food_yogurt", "希腊酸奶", "奶", "🥛", { calories: 120, protein: 10, carbs: 8, fat: 4, sodium: 55 }),
-  food("food_soy_milk", "豆浆", "饮料", "🥤", { calories: 33, protein: 3, carbs: 3, fat: 1.6, sodium: 35 }),
+  food("food_soy_milk", "豆浆", "植物蛋白", "🥤", { calories: 33, protein: 3, carbs: 3, fat: 1.6, sodium: 35 }),
   food("food_latte", "拿铁", "饮料", "☕", { calories: 45, protein: 2.5, carbs: 4.2, fat: 2, sodium: 38 }),
   food("food_black_coffee", "黑咖啡", "饮料", "☕", { calories: 2, protein: 0.1, carbs: 0, fat: 0, sodium: 2 }),
   food("food_orange_juice", "橙汁", "饮料", "🧃", { calories: 45, protein: 0.7, carbs: 10.4, fat: 0.2, sodium: 1 }),
@@ -399,14 +399,6 @@ export function createId(prefix) {
 
 export function findFood(state, foodId) {
   return (state.foods || []).find((food) => food.id === foodId);
-}
-
-export function findPortion(state, portionId) {
-  return (state.portions || []).find((portion) => portion.id === portionId);
-}
-
-export function portionsForFood(state, foodId) {
-  return (state.portions || []).filter((portion) => portion.foodId === foodId);
 }
 
 export function listFoodCategories(foods) {

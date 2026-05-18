@@ -103,7 +103,7 @@ function categoryIcon(name, explicitIcon = "") {
 const LEGACY_CATEGORY_MAP = new Map([
   ["主食", "细粮"],
   ["蛋白质", "动物蛋白"],
-  ["蔬果", "蔬菜"],
+  ["蔬果", "水果"],
   ["饮品", "饮料"],
   ["奶/饮品", "奶"],
   ["包装/高钠", "零食"],

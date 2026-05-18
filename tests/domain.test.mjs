@@ -201,7 +201,7 @@ test("default state includes a mixed built-in food library", () => {
 
   assert.equal(state.foods.length >= 50, true);
   assert.ok(findFood(state, "food_milk"));
-  assert.ok(findFood(state, "food_soy_milk"));
+  assert.equal(findFood(state, "food_soy_milk").category, "植物蛋白");
   assert.ok(findFood(state, "food_instant_noodles"));
 });
 

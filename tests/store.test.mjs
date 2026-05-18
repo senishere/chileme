@@ -61,6 +61,13 @@ test("normalizes legacy food categories, nutrition, and simplified shape", () =>
         nutrition: { calories: 88, protein: 3, carbs: 12, fat: 2 }
       },
       {
+        id: "legacy_fruit",
+        name: "旧水果",
+        category: "蔬果",
+        emoji: "🍎",
+        nutrition: { calories: 52, protein: 0.3, carbs: 13.8, fat: 0.2 }
+      },
+      {
         id: "legacy_custom",
         name: "旧自定义",
         category: "自定义",
@@ -84,6 +91,7 @@ test("normalizes legacy food categories, nutrition, and simplified shape", () =>
   assert.equal("calibration" in normalized, false);
   assert.ok(normalized.categories.find((category) => category.name === "自定义"));
   assert.equal(normalized.foods.find((food) => food.id === "legacy_rice").category, "细粮");
+  assert.equal(normalized.foods.find((food) => food.id === "legacy_fruit").category, "水果");
   assert.deepEqual(normalized.foods.find((food) => food.id === "legacy_rice").nutritionPer100g, {
     calories: 88,
     protein: 3,
