@@ -3,8 +3,13 @@ import {
   buildEntryItem,
   createId,
   dateKey,
+  dailyStructure,
+  exportLogRows,
+  exportRowsAsCsv,
+  filterFoods,
   findFood,
   findPortion,
+  listFoodCategories,
   nonNegativeFiniteNumber,
   positiveFiniteNumber,
   portionsForFood,
@@ -26,10 +31,22 @@ let state = store.load();
 let currentView = "today";
 let selectedFoodId = "";
 let entryDraft = null;
+let quickCategory = "favorite";
+let foodLibraryCategory = "all";
+let foodSearchQuery = "";
 
 const root = document.querySelector("#view-root");
 const modalRoot = document.querySelector("#modal-root");
 const todayLabel = document.querySelector("#today-label");
+
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator) || !window.isSecureContext) return;
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(() => {
+      // Offline support is optional; the app remains usable without it.
+    });
+  });
+}
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -115,6 +132,22 @@ function quickThumbHtml(food) {
   return `<span class="food-thumb">${escapeHtml(food.emoji || "🍽️")}</span>`;
 }
 
+function categoryLabel(category) {
+  if (category === "all") return "全部";
+  if (category === "favorite") return "最常吃";
+  return category;
+}
+
+function renderCategoryChips(categories, activeCategory, action) {
+  return `
+    <div class="filter-rail" role="list">
+      ${categories.map((category) => `
+        <button class="filter-chip ${category === activeCategory ? "active" : ""}" type="button" data-action="${escapeAttr(action)}" data-category="${escapeAttr(category)}">${escapeHtml(categoryLabel(category))}</button>
+      `).join("")}
+    </div>
+  `;
+}
+
 function renderSummary(day) {
   const summary = summarizeDay(state, day);
   return `
@@ -126,8 +159,42 @@ function renderSummary(day) {
   `;
 }
 
+function statusLabel(status) {
+  if (status === "low") return "不足";
+  if (status === "over") return "超量";
+  if (status === "near") return "接近";
+  return "估算";
+}
+
+function renderStructure(day) {
+  const metrics = dailyStructure(state, day);
+  const rows = Object.entries(metrics).map(([key, metric]) => {
+    const progress = Math.min(100, Math.round((metric.ratio || 0) * 100));
+    const digits = key === "calories" || key === "sodium" || key === "waterMl" ? 0 : 1;
+    return `
+      <article class="structure-row ${escapeAttr(metric.status)}">
+        <div>
+          <strong>${escapeHtml(metric.label)}</strong>
+          <span>${formatNumber(metric.value, digits)} / ${formatNumber(metric.target, digits)} ${escapeHtml(metric.unit)}</span>
+        </div>
+        <div class="structure-track" aria-hidden="true"><span style="width: ${progress}%"></span></div>
+        <em>${escapeHtml(statusLabel(metric.status))}</em>
+      </article>
+    `;
+  }).join("");
+
+  return `
+    <section class="panel">
+      <div class="section-head"><h2>今日结构</h2><span class="hint">估算值</span></div>
+      <div class="structure-list">${rows}</div>
+    </section>
+  `;
+}
+
 function renderQuickAdd() {
-  const quickFoods = state.foods.filter((food) => food.quickAdd !== false);
+  const categories = ["favorite", ...listFoodCategories(state.foods)];
+  if (!categories.includes(quickCategory)) quickCategory = "favorite";
+  const quickFoods = filterFoods(state.foods, { category: quickCategory });
   const cards = quickFoods.map((food) => {
     const portion = findPortion(state, food.defaultPortionId);
     return `
@@ -145,6 +212,7 @@ function renderQuickAdd() {
         <h2>快速添加</h2>
         <span class="hint">左右滑动</span>
       </div>
+      ${renderCategoryChips(categories, quickCategory, "set-quick-category")}
       <div class="quick-rail">${cards || `<div class="empty">添加第一个常吃食物</div>`}</div>
       <div class="actions-row">
         <button class="button secondary" type="button" data-action="show-foods">搜索/更多</button>
@@ -203,21 +271,37 @@ function renderTimeline(day) {
 function renderToday() {
   const day = dateKey();
   todayLabel.textContent = `今天 · ${day}`;
-  root.innerHTML = renderSummary(day) + renderQuickAdd() + renderTimeline(day);
+  root.innerHTML = renderSummary(day) + renderStructure(day) + renderQuickAdd() + renderTimeline(day);
 }
 
-function renderFoods() {
-  const rows = state.foods.map((food) => {
+function renderFoodRows() {
+  const foods = filterFoods(state.foods, {
+    category: foodLibraryCategory,
+    query: foodSearchQuery
+  });
+  if (!foods.length) return `<div class="empty">没有匹配的食物</div>`;
+
+  return foods.map((food) => {
     const portion = findPortion(state, food.defaultPortionId);
     const amount = portion ? amountLabel(portionAmount(portion), portion.unit) : "无默认份量";
     const sodium = formatNumber(food.nutrition?.sodium || 0);
+    const favoriteLabel = food.quickAdd === false ? "常用" : "取消";
     return `
       <article class="food-row">
         <div><strong>${escapeHtml(food.emoji || "🍽️")} ${escapeHtml(food.name)}</strong><br><span class="hint">${escapeHtml(food.category)} · ${food.kind === "packaged" ? "包装食品" : "常规食物"} · ${escapeHtml(portion?.label || "默认")} ${escapeHtml(amount)} · 钠 ${sodium}mg/${escapeHtml(foodNutritionModeLabel(food))}</span></div>
-        <button class="icon-button" type="button" data-action="open-entry" data-food-id="${escapeAttr(food.id)}">+</button>
+        <div class="food-actions">
+          <button class="button secondary compact" type="button" data-action="toggle-favorite" data-food-id="${escapeAttr(food.id)}">${favoriteLabel}</button>
+          <button class="icon-button" type="button" aria-label="编辑食物" data-action="edit-food" data-food-id="${escapeAttr(food.id)}">✎</button>
+          <button class="icon-button" type="button" data-action="open-entry" data-food-id="${escapeAttr(food.id)}">+</button>
+        </div>
       </article>
     `;
   }).join("");
+}
+
+function renderFoods() {
+  const categories = ["all", "favorite", ...listFoodCategories(state.foods)];
+  if (!categories.includes(foodLibraryCategory)) foodLibraryCategory = "all";
 
   root.innerHTML = `
     <section class="panel">
@@ -225,7 +309,12 @@ function renderFoods() {
         <h2>食物库</h2>
         <button class="button" type="button" data-action="open-food-form">+ 食物</button>
       </div>
-      ${rows}
+      <label class="field search-field">
+        <span>搜索</span>
+        <input name="foodSearch" type="search" enterkeyhint="search" value="${escapeAttr(foodSearchQuery)}" placeholder="食物名或分类">
+      </label>
+      ${renderCategoryChips(categories, foodLibraryCategory, "set-food-category")}
+      <div id="food-results">${renderFoodRows()}</div>
     </section>
   `;
 }
@@ -265,6 +354,12 @@ function renderSettings() {
         <label class="field"><span>热量目标 kcal</span><input name="calories" inputmode="numeric" value="${escapeAttr(state.dailyGoal.calories || "")}"></label>
         <label class="field"><span>蛋白质目标 g</span><input name="protein" inputmode="numeric" value="${escapeAttr(state.dailyGoal.protein || "")}"></label>
         <label class="field"><span>饮水目标 ml</span><input name="waterMl" inputmode="numeric" value="${escapeAttr(state.dailyGoal.waterMl || "")}"></label>
+        <label class="field"><span>性别</span><select name="sex"><option value="female" ${state.profile.sex === "female" ? "selected" : ""}>女</option><option value="male" ${state.profile.sex === "male" ? "selected" : ""}>男</option></select></label>
+        <label class="field"><span>年龄</span><input name="age" inputmode="numeric" value="${escapeAttr(state.profile.age || "")}"></label>
+        <label class="field"><span>身高 cm</span><input name="heightCm" inputmode="decimal" value="${escapeAttr(state.profile.heightCm || "")}"></label>
+        <label class="field"><span>体重 kg</span><input name="weightKg" inputmode="decimal" value="${escapeAttr(state.profile.weightKg || "")}"></label>
+        <label class="field"><span>活动水平</span><select name="activityLevel"><option value="sedentary" ${state.profile.activityLevel === "sedentary" ? "selected" : ""}>久坐</option><option value="light" ${state.profile.activityLevel === "light" ? "selected" : ""}>轻度</option><option value="moderate" ${state.profile.activityLevel === "moderate" ? "selected" : ""}>中等</option><option value="active" ${state.profile.activityLevel === "active" ? "selected" : ""}>较高</option></select></label>
+        <label class="field"><span>目标</span><select name="goal"><option value="maintain" ${state.profile.goal === "maintain" ? "selected" : ""}>维持</option><option value="lose" ${state.profile.goal === "lose" ? "selected" : ""}>减脂</option><option value="gain" ${state.profile.goal === "gain" ? "selected" : ""}>增肌</option></select></label>
         <label class="field"><span>拳头宽度 cm</span><input name="fistWidthCm" inputmode="decimal" value="${escapeAttr(state.calibration.fistWidthCm || "")}"></label>
         <label class="field"><span>掌心宽度 cm</span><input name="palmWidthCm" inputmode="decimal" value="${escapeAttr(state.calibration.palmWidthCm || "")}"></label>
         <label class="field"><span>手指宽度 cm</span><input name="fingerWidthCm" inputmode="decimal" value="${escapeAttr(state.calibration.fingerWidthCm || "")}"></label>
@@ -275,6 +370,14 @@ function renderSettings() {
       <div class="actions-row">
         <button class="button secondary" type="button" data-action="export">导出 JSON</button>
         <button class="button secondary" type="button" data-action="import">导入 JSON</button>
+      </div>
+      <div class="actions-row">
+        <button class="button secondary" type="button" data-action="export-range" data-days="7" data-format="csv">7 天 CSV</button>
+        <button class="button secondary" type="button" data-action="export-range" data-days="7" data-format="json">7 天 JSON</button>
+      </div>
+      <div class="actions-row">
+        <button class="button secondary" type="button" data-action="export-range" data-days="30" data-format="csv">30 天 CSV</button>
+        <button class="button secondary" type="button" data-action="export-range" data-days="30" data-format="json">30 天 JSON</button>
       </div>
       <div class="actions-row">
         <button class="button danger" type="button" data-action="clear-data">清空本地数据</button>
@@ -417,30 +520,40 @@ function openEntryModal(foodId = "", entryId = "") {
   renderEntryModal();
 }
 
-function openFoodForm() {
+function openFoodForm(foodId = "") {
+  const existingFood = findFood(state, foodId);
+  const existingPortion = findPortion(state, existingFood?.defaultPortionId);
+  const title = existingFood ? "编辑食物" : "新增食物";
+  const kind = existingFood?.kind || "regular";
+  const nutritionMode = existingFood?.nutritionMode || "per100g";
+  const unit = existingPortion?.unit === "ml" ? "ml" : "g";
+
   modalRoot.hidden = false;
   modalRoot.innerHTML = `
-    <section class="sheet" role="dialog" aria-modal="true" aria-label="新增食物">
+    <section class="sheet" role="dialog" aria-modal="true" aria-label="${escapeAttr(title)}">
       <div class="section-head">
-        <h2>新增食物</h2>
+        <h2>${escapeHtml(title)}</h2>
         <button class="icon-button" type="button" data-action="close-modal">×</button>
       </div>
       <form class="form-grid" data-action="save-food">
-        <label class="field"><span>名称</span><input name="name" required placeholder="例如 牛奶"></label>
-        <label class="field"><span>分类</span><input name="category" value="常吃"></label>
-        <label class="field"><span>类型</span><select name="kind"><option value="regular">常规食物</option><option value="packaged">包装食品</option></select></label>
-        <label class="field"><span>营养标注方式</span><select name="nutritionMode"><option value="per100g">每 100g</option><option value="per100ml">每 100ml</option><option value="perServing">每份</option><option value="perPackage">整包</option></select></label>
-        <label class="field"><span>默认份量名称</span><input name="portionLabel" value="1份"></label>
-        <label class="field"><span>默认份量数量</span><input name="amount" inputmode="decimal" value="100"></label>
-        <label class="field"><span>默认份量单位</span><select name="unit"><option value="g">g</option><option value="ml">ml</option></select></label>
-        <label class="field"><span>液体密度 g/ml</span><input name="densityGPerMl" inputmode="decimal" value="1"></label>
-        <label class="field"><span>每份重量/容量</span><input name="servingGrams" inputmode="decimal" value="100"></label>
-        <label class="field"><span>整包重量/容量</span><input name="packageGrams" inputmode="decimal" value="100"></label>
-        <label class="field"><span>热量 kcal</span><input name="calories" inputmode="decimal" value="0"></label>
-        <label class="field"><span>蛋白质 g</span><input name="protein" inputmode="decimal" value="0"></label>
-        <label class="field"><span>碳水 g</span><input name="carbs" inputmode="decimal" value="0"></label>
-        <label class="field"><span>脂肪 g</span><input name="fat" inputmode="decimal" value="0"></label>
-        <label class="field"><span>钠 mg</span><input name="sodium" inputmode="decimal" value="0"></label>
+        <input type="hidden" name="foodId" value="${escapeAttr(existingFood?.id || "")}">
+        <input type="hidden" name="portionId" value="${escapeAttr(existingPortion?.id || "")}">
+        <label class="field"><span>名称</span><input name="name" required placeholder="例如 牛奶" value="${escapeAttr(existingFood?.name || "")}"></label>
+        <label class="field"><span>分类</span><input name="category" value="${escapeAttr(existingFood?.category || "常吃")}"></label>
+        <label class="field"><span>类型</span><select name="kind"><option value="regular" ${kind === "regular" ? "selected" : ""}>常规食物</option><option value="packaged" ${kind === "packaged" ? "selected" : ""}>包装食品</option></select></label>
+        <label class="field"><span>营养标注方式</span><select name="nutritionMode"><option value="per100g" ${nutritionMode === "per100g" ? "selected" : ""}>每 100g</option><option value="per100ml" ${nutritionMode === "per100ml" ? "selected" : ""}>每 100ml</option><option value="perServing" ${nutritionMode === "perServing" ? "selected" : ""}>每份</option><option value="perPackage" ${nutritionMode === "perPackage" ? "selected" : ""}>整包</option></select></label>
+        <label class="field"><span>默认份量名称</span><input name="portionLabel" value="${escapeAttr(existingPortion?.label || "1份")}"></label>
+        <label class="field"><span>默认份量数量</span><input name="amount" inputmode="decimal" value="${escapeAttr(portionAmount(existingPortion))}"></label>
+        <label class="field"><span>默认份量单位</span><select name="unit"><option value="g" ${unit === "g" ? "selected" : ""}>g</option><option value="ml" ${unit === "ml" ? "selected" : ""}>ml</option></select></label>
+        <label class="field"><span>液体密度 g/ml</span><input name="densityGPerMl" inputmode="decimal" value="${escapeAttr(existingFood?.densityGPerMl || 1)}"></label>
+        <label class="field"><span>每份重量/容量</span><input name="servingGrams" inputmode="decimal" value="${escapeAttr(existingFood?.servingGrams || existingPortion?.grams || 100)}"></label>
+        <label class="field"><span>整包重量/容量</span><input name="packageGrams" inputmode="decimal" value="${escapeAttr(existingFood?.packageGrams || existingPortion?.grams || 100)}"></label>
+        <label class="field"><span>热量 kcal</span><input name="calories" inputmode="decimal" value="${escapeAttr(existingFood?.nutrition?.calories || 0)}"></label>
+        <label class="field"><span>蛋白质 g</span><input name="protein" inputmode="decimal" value="${escapeAttr(existingFood?.nutrition?.protein || 0)}"></label>
+        <label class="field"><span>碳水 g</span><input name="carbs" inputmode="decimal" value="${escapeAttr(existingFood?.nutrition?.carbs || 0)}"></label>
+        <label class="field"><span>脂肪 g</span><input name="fat" inputmode="decimal" value="${escapeAttr(existingFood?.nutrition?.fat || 0)}"></label>
+        <label class="field"><span>钠 mg</span><input name="sodium" inputmode="decimal" value="${escapeAttr(existingFood?.nutrition?.sodium || 0)}"></label>
+        ${existingFood?.image ? `<div class="photo-preview"><span class="entry-thumb"><img alt="" src="${escapeAttr(existingFood.image)}"></span><span class="hint">已保存图片</span></div>` : ""}
         <label class="field"><span>图片</span><input name="image" type="file" accept="image/*"></label>
         <button class="button" type="submit">保存食物</button>
       </form>
@@ -563,8 +676,10 @@ async function handleEntrySubmit(form) {
 
 async function handleFoodSubmit(form) {
   const data = new FormData(form);
-  const foodId = createId("food");
-  const portionId = createId("portion");
+  const existingFood = findFood(state, String(data.get("foodId") || ""));
+  const existingPortion = findPortion(state, String(data.get("portionId") || ""));
+  const foodId = existingFood?.id || createId("food");
+  const portionId = existingPortion?.id || createId("portion");
   const image = await readImage(form.image.files[0]);
   const kind = String(data.get("kind") || "regular");
   const amount = positiveFiniteNumber(data.get("amount"), 100);
@@ -579,8 +694,8 @@ async function handleFoodSubmit(form) {
     name: String(data.get("name") || "未命名"),
     category: String(data.get("category") || "常吃"),
     kind,
-    emoji: "🍽️",
-    image: image.dataUrl,
+    emoji: existingFood?.emoji || "🍽️",
+    image: image.dataUrl || existingFood?.image || "",
     nutritionMode,
     densityGPerMl,
     servingGrams,
@@ -593,17 +708,28 @@ async function handleFoodSubmit(form) {
       sodium: nonNegativeFiniteNumber(data.get("sodium"), 0)
     },
     defaultPortionId: portionId,
-    quickAdd: true
+    quickAdd: existingFood?.quickAdd === false ? false : true
   };
-  state.foods.push(food);
-  state.portions.push({
+  const portion = {
     id: portionId,
     foodId,
     label: String(data.get("portionLabel") || "1份"),
     amount,
     unit,
     grams
-  });
+  };
+
+  if (existingFood) {
+    state.foods = state.foods.map((item) => item.id === foodId ? food : item);
+  } else {
+    state.foods.push(food);
+  }
+
+  if (existingPortion) {
+    state.portions = state.portions.map((item) => item.id === portionId ? portion : item);
+  } else {
+    state.portions.push(portion);
+  }
 
   closeModal();
   currentView = "foods";
@@ -619,6 +745,28 @@ function exportJson() {
   link.download = `chileme-${dateKey()}.json`;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+function downloadText(filename, content, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportRange(days, format) {
+  const safeDays = Number(days) === 30 ? 30 : 7;
+  const rows = exportLogRows(state, dateKey(), safeDays);
+  const safeFormat = format === "json" ? "json" : "csv";
+  const filename = `chileme-${safeDays}d-${dateKey()}.${safeFormat}`;
+  if (safeFormat === "json") {
+    downloadText(filename, JSON.stringify(rows, null, 2), "application/json");
+  } else {
+    downloadText(filename, exportRowsAsCsv(rows), "text/csv;charset=utf-8");
+  }
 }
 
 function importJson() {
@@ -655,6 +803,21 @@ document.addEventListener("click", (event) => {
     currentView = "foods";
     render();
   }
+  if (action === "set-quick-category") {
+    quickCategory = target.dataset.category || "favorite";
+    render();
+  }
+  if (action === "set-food-category") {
+    foodLibraryCategory = target.dataset.category || "all";
+    render();
+  }
+  if (action === "toggle-favorite") {
+    const food = findFood(state, target.dataset.foodId || "");
+    if (food) {
+      food.quickAdd = food.quickAdd === false;
+      saveAndRender();
+    }
+  }
   if (action === "add-water") {
     state.waterEntries.push({
       id: createId("water"),
@@ -664,6 +827,7 @@ document.addEventListener("click", (event) => {
     saveAndRender();
   }
   if (action === "open-food-form") openFoodForm();
+  if (action === "edit-food") openFoodForm(target.dataset.foodId || "");
   if (action === "close-modal") closeModal();
   if (action === "add-draft-item") {
     const form = target.closest("form");
@@ -688,6 +852,7 @@ document.addEventListener("click", (event) => {
     state.entries = state.entries.filter((entry) => entry.id !== target.dataset.entryId);
     saveAndRender();
   }
+  if (action === "export-range") exportRange(target.dataset.days, target.dataset.format);
   if (action === "export") exportJson();
   if (action === "import") importJson();
   if (action === "clear-data" && confirm("清空本地数据？")) {
@@ -695,6 +860,14 @@ document.addEventListener("click", (event) => {
     state = store.load();
     render();
   }
+});
+
+document.addEventListener("input", (event) => {
+  const input = event.target.closest('input[name="foodSearch"]');
+  if (!input) return;
+  foodSearchQuery = input.value;
+  const results = document.querySelector("#food-results");
+  if (results) results.innerHTML = renderFoodRows();
 });
 
 document.addEventListener("submit", async (event) => {
@@ -719,6 +892,14 @@ document.addEventListener("submit", async (event) => {
       calories: goalInputValue(data.get("calories")),
       protein: goalInputValue(data.get("protein")),
       waterMl: goalInputValue(data.get("waterMl"))
+    };
+    state.profile = {
+      sex: data.get("sex") === "male" ? "male" : "female",
+      age: positiveFiniteNumber(data.get("age"), state.profile.age),
+      heightCm: positiveFiniteNumber(data.get("heightCm"), state.profile.heightCm),
+      weightKg: positiveFiniteNumber(data.get("weightKg"), state.profile.weightKg),
+      activityLevel: String(data.get("activityLevel") || state.profile.activityLevel),
+      goal: String(data.get("goal") || state.profile.goal)
     };
     state.calibration = {
       ...state.calibration,
@@ -753,4 +934,5 @@ modalRoot.addEventListener("change", (event) => {
   form.elements.grams.value = portionAmount(defaultPortion);
 });
 
+registerServiceWorker();
 render();

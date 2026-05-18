@@ -63,6 +63,22 @@ function normalizeGoalValue(value, fallback) {
   return normalizePositiveNumber(value, fallback);
 }
 
+function normalizeProfile(profile, defaults) {
+  if (!profile || typeof profile !== "object") return defaults.profile;
+  const sex = profile.sex === "male" ? "male" : "female";
+  const activityLevels = new Set(["sedentary", "light", "moderate", "active"]);
+  const goals = new Set(["lose", "maintain", "gain"]);
+
+  return {
+    sex,
+    age: normalizePositiveNumber(profile.age, defaults.profile.age),
+    heightCm: normalizePositiveNumber(profile.heightCm, defaults.profile.heightCm),
+    weightKg: normalizePositiveNumber(profile.weightKg, defaults.profile.weightKg),
+    activityLevel: activityLevels.has(profile.activityLevel) ? profile.activityLevel : defaults.profile.activityLevel,
+    goal: goals.has(profile.goal) ? profile.goal : defaults.profile.goal
+  };
+}
+
 function isValidTimestamp(value) {
   return (typeof value === "string" || typeof value === "number")
     && Number.isFinite(new Date(value).getTime());
@@ -263,6 +279,7 @@ export function normalizeState(input) {
     entries: normalizeEntries(state.entries),
     waterEntries: normalizeWaterEntries(state.waterEntries),
     calibration: normalizeCalibration(state.calibration, defaults),
+    profile: normalizeProfile(state.profile, defaults),
     dailyGoal: normalizeDailyGoal(state.dailyGoal, defaults)
   };
 }

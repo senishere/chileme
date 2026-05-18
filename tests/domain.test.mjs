@@ -5,8 +5,14 @@ import {
   calculateItemNutrition,
   createDefaultState,
   dateKey,
+  dailyStructure,
+  estimateDailyTargets,
+  exportLogRows,
+  exportRowsAsCsv,
+  filterFoods,
   findFood,
   findPortion,
+  listFoodCategories,
   portionsForFood,
   summarizeDay,
   sevenDayStats
@@ -241,4 +247,161 @@ test("default state includes a mixed built-in food library", () => {
   assert.ok(findFood(state, "food_soy_milk"));
   assert.ok(findFood(state, "food_instant_noodles"));
   assert.equal(findPortion(state, "portion_milk_cup").unit, "ml");
+});
+
+test("lists food categories once in first-seen order", () => {
+  const foods = [
+    { id: "a", name: "米饭", category: "主食" },
+    { id: "b", name: "鸡蛋", category: "蛋白质" },
+    { id: "c", name: "面条", category: "主食" },
+    { id: "d", name: "自定义", category: "" }
+  ];
+
+  assert.deepEqual(listFoodCategories(foods), ["主食", "蛋白质"]);
+});
+
+test("filters foods by favorites category and search query", () => {
+  const foods = [
+    { id: "rice", name: "米饭", category: "主食", quickAdd: true },
+    { id: "egg", name: "鸡蛋", category: "蛋白质", quickAdd: false },
+    { id: "milk", name: "牛奶", category: "奶/饮品", quickAdd: true }
+  ];
+
+  assert.deepEqual(filterFoods(foods, { category: "favorite" }).map((food) => food.id), ["rice", "milk"]);
+  assert.deepEqual(filterFoods(foods, { category: "蛋白质" }).map((food) => food.id), ["egg"]);
+  assert.deepEqual(filterFoods(foods, { query: "奶" }).map((food) => food.id), ["milk"]);
+  assert.deepEqual(filterFoods(foods, { category: "favorite", query: "米" }).map((food) => food.id), ["rice"]);
+});
+
+test("exports food and water rows for a rolling day range", () => {
+  const state = createDefaultState();
+  state.entries = [{
+    id: "entry_a",
+    timestamp: "2026-05-18T12:00:00",
+    items: [{
+      foodId: "food_rice",
+      label: "1拳",
+      amount: 150,
+      unit: "g",
+      nutrition: { calories: 174, protein: 3.9, carbs: 38.85, fat: 0.45, sodium: 1.5 }
+    }],
+    note: "午餐",
+    photo: "data:image/png;base64,ignored"
+  }, {
+    id: "entry_old",
+    timestamp: "2026-05-10T12:00:00",
+    items: [{
+      foodId: "food_rice",
+      label: "1拳",
+      amount: 150,
+      unit: "g",
+      nutrition: { calories: 174, protein: 3.9, carbs: 38.85, fat: 0.45, sodium: 1.5 }
+    }],
+    note: "",
+    photo: ""
+  }];
+  state.waterEntries = [
+    { id: "water_a", timestamp: "2026-05-18T15:00:00", milliliters: 300 }
+  ];
+
+  assert.deepEqual(exportLogRows(state, "2026-05-18", 7), [{
+    date: "2026-05-18",
+    timestamp: "2026-05-18T12:00:00",
+    type: "food",
+    food: "米饭",
+    portion: "1拳",
+    amount: 150,
+    unit: "g",
+    calories: 174,
+    protein: 3.9,
+    carbs: 38.85,
+    fat: 0.45,
+    sodium: 1.5,
+    waterMl: 0,
+    note: "午餐"
+  }, {
+    date: "2026-05-18",
+    timestamp: "2026-05-18T15:00:00",
+    type: "water",
+    food: "饮水",
+    portion: "",
+    amount: 300,
+    unit: "ml",
+    calories: 0,
+    protein: 0,
+    carbs: 0,
+    fat: 0,
+    sodium: 0,
+    waterMl: 300,
+    note: ""
+  }]);
+});
+
+test("serializes exported rows as escaped CSV", () => {
+  const csv = exportRowsAsCsv([{
+    date: "2026-05-18",
+    timestamp: "2026-05-18T12:00:00",
+    type: "food",
+    food: "米饭,鸡蛋",
+    portion: "1拳",
+    amount: 150,
+    unit: "g",
+    calories: 174,
+    protein: 3.9,
+    carbs: 38.85,
+    fat: 0.45,
+    sodium: 1.5,
+    waterMl: 0,
+    note: "午餐"
+  }]);
+
+  assert.equal(csv.split("\n")[0], "date,timestamp,type,food,portion,amount,unit,calories,protein,carbs,fat,sodium,waterMl,note");
+  assert.match(csv, /"米饭,鸡蛋"/);
+});
+
+test("estimates rough daily targets from profile with explicit goal overrides", () => {
+  const targets = estimateDailyTargets({
+    sex: "female",
+    age: 35,
+    heightCm: 165,
+    weightKg: 60,
+    activityLevel: "light",
+    goal: "lose"
+  }, {
+    calories: 1600,
+    protein: null,
+    waterMl: 2200
+  });
+
+  assert.equal(targets.calories, 1600);
+  assert.equal(targets.protein, 84);
+  assert.equal(targets.waterMl, 2200);
+  assert.equal(targets.sodium, 2000);
+  assert.equal(targets.carbs > 0, true);
+  assert.equal(targets.fat > 0, true);
+});
+
+test("builds daily structure statuses from summary and targets", () => {
+  const state = createDefaultState();
+  state.dailyGoal = { calories: 2000, protein: 100, waterMl: 2000 };
+  state.entries = [{
+    id: "entry_a",
+    timestamp: "2026-05-18T12:00:00",
+    items: [{
+      foodId: "food_rice",
+      amount: 150,
+      unit: "g",
+      nutrition: { calories: 2100, protein: 60, carbs: 300, fat: 80, sodium: 2300 }
+    }],
+    note: "",
+    photo: ""
+  }];
+  state.waterEntries = [{ id: "water_a", timestamp: "2026-05-18T15:00:00", milliliters: 500 }];
+
+  const structure = dailyStructure(state, "2026-05-18");
+
+  assert.equal(structure.calories.status, "over");
+  assert.equal(structure.protein.status, "low");
+  assert.equal(structure.waterMl.status, "low");
+  assert.equal(structure.sodium.status, "over");
 });

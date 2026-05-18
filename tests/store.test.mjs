@@ -245,6 +245,30 @@ test("normalizes invalid calibration and goal leaf values", () => {
   assert.equal(normalized.dailyGoal.waterMl, 2300);
 });
 
+test("normalizes profile fields for target estimation", () => {
+  const normalized = normalizeState({
+    profile: {
+      sex: "male",
+      age: "42",
+      heightCm: "178",
+      weightKg: "76",
+      activityLevel: "moderate",
+      goal: "gain"
+    }
+  });
+
+  assert.deepEqual(normalized.profile, {
+    sex: "male",
+    age: 42,
+    heightCm: 178,
+    weightKg: 76,
+    activityLevel: "moderate",
+    goal: "gain"
+  });
+
+  assert.equal(normalizeState({ profile: { sex: "bad", age: -1 } }).profile.sex, "female");
+});
+
 test("normalizes malformed calibration containers", () => {
   const defaults = createDefaultState();
   const normalized = normalizeState({

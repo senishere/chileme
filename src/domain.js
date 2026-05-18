@@ -217,6 +217,14 @@ export function createDefaultState() {
       fingerWidthCm: 1.8,
       containers: [{ id: "container_bowl", label: "家用碗", capacityMl: 350 }]
     },
+    profile: {
+      sex: "female",
+      age: 30,
+      heightCm: 165,
+      weightKg: 60,
+      activityLevel: "light",
+      goal: "maintain"
+    },
     dailyGoal: { calories: 2000, protein: 100, waterMl: 2000 }
   };
 }
@@ -283,6 +291,76 @@ export function sevenDayStats(state, endDayKey = dateKey()) {
   });
 }
 
+export function estimateDailyTargets(profile = {}, dailyGoal = {}) {
+  const weightKg = positiveFiniteNumber(profile.weightKg, 65);
+  const heightCm = positiveFiniteNumber(profile.heightCm, 170);
+  const age = positiveFiniteNumber(profile.age, 30);
+  const sexOffset = profile.sex === "male" ? 5 : -161;
+  const activityMultipliers = {
+    sedentary: 1.2,
+    light: 1.375,
+    moderate: 1.55,
+    active: 1.725
+  };
+  const activity = activityMultipliers[profile.activityLevel] || activityMultipliers.light;
+  const goalAdjustments = {
+    lose: -300,
+    maintain: 0,
+    gain: 250
+  };
+  const adjustment = goalAdjustments[profile.goal] ?? 0;
+  const bmr = (10 * weightKg) + (6.25 * heightCm) - (5 * age) + sexOffset;
+  const estimatedCalories = Math.max(1200, Math.round((bmr * activity) + adjustment));
+  const calories = positiveFiniteNumber(dailyGoal.calories, estimatedCalories);
+  const proteinFactor = profile.goal === "gain" ? 1.6 : profile.goal === "lose" ? 1.4 : 1.2;
+  const protein = positiveFiniteNumber(dailyGoal.protein, Math.round(weightKg * proteinFactor));
+  const fat = Math.round((calories * 0.25) / 9);
+  const proteinCalories = protein * 4;
+  const fatCalories = fat * 9;
+  const carbs = Math.max(0, Math.round((calories - proteinCalories - fatCalories) / 4));
+  const waterMl = positiveFiniteNumber(dailyGoal.waterMl, Math.round(weightKg * 35));
+
+  return {
+    calories,
+    protein,
+    carbs,
+    fat,
+    sodium: 2000,
+    waterMl
+  };
+}
+
+function targetStatus(value, target, overRatio = 1) {
+  const safeTarget = positiveFiniteNumber(target, 0);
+  if (!safeTarget) return "neutral";
+  const ratio = nonNegativeFiniteNumber(value, 0) / safeTarget;
+  if (ratio < 0.8) return "low";
+  if (ratio > overRatio) return "over";
+  return "near";
+}
+
+export function dailyStructure(state, dayKey = dateKey()) {
+  const summary = summarizeDay(state, dayKey);
+  const targets = estimateDailyTargets(state.profile, state.dailyGoal);
+  const metrics = {
+    calories: { label: "热量", unit: "kcal", value: summary.calories, target: targets.calories },
+    protein: { label: "蛋白质", unit: "g", value: summary.protein, target: targets.protein },
+    carbs: { label: "碳水", unit: "g", value: summary.carbs, target: targets.carbs },
+    fat: { label: "脂肪", unit: "g", value: summary.fat, target: targets.fat },
+    sodium: { label: "钠", unit: "mg", value: summary.sodium, target: targets.sodium },
+    waterMl: { label: "饮水", unit: "ml", value: summary.waterMl, target: targets.waterMl }
+  };
+
+  for (const [key, metric] of Object.entries(metrics)) {
+    metric.status = key === "sodium" && metric.value <= metric.target
+      ? "near"
+      : targetStatus(metric.value, metric.target);
+    metric.ratio = metric.target ? roundMetric(metric.value / metric.target) : 0;
+  }
+
+  return metrics;
+}
+
 export function createId(prefix) {
   const random = Math.random().toString(36).slice(2, 9);
   return `${prefix}_${Date.now().toString(36)}_${random}`;
@@ -298,6 +376,114 @@ export function findPortion(state, portionId) {
 
 export function portionsForFood(state, foodId) {
   return (state.portions || []).filter((portion) => portion.foodId === foodId);
+}
+
+export function listFoodCategories(foods) {
+  const categories = [];
+  const seen = new Set();
+  for (const foodItem of foods || []) {
+    const category = typeof foodItem?.category === "string" ? foodItem.category.trim() : "";
+    if (!category || seen.has(category)) continue;
+    seen.add(category);
+    categories.push(category);
+  }
+  return categories;
+}
+
+export function filterFoods(foods, options = {}) {
+  const category = options.category || "all";
+  const query = String(options.query || "").trim().toLocaleLowerCase("zh-CN");
+
+  return (foods || []).filter((foodItem) => {
+    if (category === "favorite" && foodItem.quickAdd === false) return false;
+    if (category !== "all" && category !== "favorite" && foodItem.category !== category) return false;
+    if (!query) return true;
+
+    return [foodItem.name, foodItem.category]
+      .some((value) => String(value || "").toLocaleLowerCase("zh-CN").includes(query));
+  });
+}
+
+export function exportLogRows(state, endDayKey = dateKey(), days = 7) {
+  const end = new Date(`${endDayKey}T00:00:00`);
+  const start = new Date(end);
+  start.setDate(start.getDate() - Math.max(1, Number(days) || 1) + 1);
+  const startKey = dateKey(start);
+  const endKey = dateKey(end);
+  const inRange = (timestamp) => {
+    const key = dateKey(timestamp);
+    return key >= startKey && key <= endKey;
+  };
+
+  const foodRows = (state.entries || []).flatMap((entry) => {
+    if (!inRange(entry.timestamp)) return [];
+    return (entry.items || []).map((item) => {
+      const foodItem = findFood(state, item.foodId);
+      return {
+        date: dateKey(entry.timestamp),
+        timestamp: entry.timestamp,
+        type: "food",
+        food: foodItem?.name || item.foodId || "未知食物",
+        portion: item.label || "",
+        amount: nonNegativeFiniteNumber(item.amount, nonNegativeFiniteNumber(item.grams, 0)),
+        unit: item.unit === "ml" ? "ml" : "g",
+        calories: nonNegativeFiniteNumber(item.nutrition?.calories, 0),
+        protein: nonNegativeFiniteNumber(item.nutrition?.protein, 0),
+        carbs: nonNegativeFiniteNumber(item.nutrition?.carbs, 0),
+        fat: nonNegativeFiniteNumber(item.nutrition?.fat, 0),
+        sodium: nonNegativeFiniteNumber(item.nutrition?.sodium, 0),
+        waterMl: 0,
+        note: entry.note || ""
+      };
+    });
+  });
+
+  const waterRows = (state.waterEntries || [])
+    .filter((entry) => inRange(entry.timestamp))
+    .map((entry) => ({
+      date: dateKey(entry.timestamp),
+      timestamp: entry.timestamp,
+      type: "water",
+      food: "饮水",
+      portion: "",
+      amount: nonNegativeFiniteNumber(entry.milliliters, 0),
+      unit: "ml",
+      calories: 0,
+      protein: 0,
+      carbs: 0,
+      fat: 0,
+      sodium: 0,
+      waterMl: nonNegativeFiniteNumber(entry.milliliters, 0),
+      note: ""
+    }));
+
+  return [...foodRows, ...waterRows]
+    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+}
+
+export function exportRowsAsCsv(rows) {
+  const headers = [
+    "date",
+    "timestamp",
+    "type",
+    "food",
+    "portion",
+    "amount",
+    "unit",
+    "calories",
+    "protein",
+    "carbs",
+    "fat",
+    "sodium",
+    "waterMl",
+    "note"
+  ];
+  const escapeCell = (value) => {
+    const text = String(value ?? "");
+    return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+  };
+  const lines = rows.map((row) => headers.map((header) => escapeCell(row[header])).join(","));
+  return [headers.join(","), ...lines].join("\n");
 }
 
 export function buildEntryItem(food, portion, gramsOverride) {
