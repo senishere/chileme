@@ -5,10 +5,12 @@
 ## 当前版本
 
 - 应用名称：吃了么
-- 当前功能分支：`feature/unit-simplification`
-- 代码状态：以 `git log --oneline -3` 和 `git status --short` 为准
+- 当前分支：`main`
+- 本轮收尾提交：`466c2ce docs: update simplified tracking status`
+- 代码状态：本轮结束时 `git status --short` 干净
 - 本地目录：`/Users/sen/projects/chileme`
-- 手机测试地址：`http://192.168.0.104:4173/`
+- 本地预览：运行 `npm run serve` 后打开 `http://127.0.0.1:4173/`
+- 手机测试地址：同 Wi-Fi 下运行本地服务后打开 `http://192.168.0.104:4173/`
 
 ## 已完成
 
@@ -36,16 +38,27 @@
 - `node --check src/domain.js`：通过
 - `node --check src/store.js`：通过
 - `git diff --check`：通过
-- 本地 HTTP smoke：`index.html`、`src/app.js`、`sw.js`、`manifest.webmanifest`
-- Chrome headless 渲染首页，确认今日结构、分类筛选和快捷添加出现在 DOM 中。
+- 规格复审：通过
+- 代码质量复审：通过，无阻塞发现
+- 合并后本地 HTTP smoke：`http://127.0.0.1:4174/` 返回首页；`4173` 当时被占用，临时服务已在收尾时停止
 
 ## 使用提示
 
 - 电脑和 iPhone 需要在同一个 Wi-Fi。
-- 在 iPhone Safari 打开 `http://192.168.0.104:4173/`。
+- 运行 `npm run serve` 后，在 iPhone Safari 打开 `http://192.168.0.104:4173/`。
+- 如果 `4173` 被占用，可改用相邻端口运行静态服务，并在手机地址中同步替换端口。
 - 如果看到旧页面，刷新或关闭后重新打开。
 - 可以用 Safari 分享菜单里的“添加到主屏幕”安装成主屏幕应用。
 - 营养数值是粗略估算，不是医疗建议。
+
+## 本轮结果
+
+- 单位和食物编辑已彻底迁移为 `g/ml` 记录、每 `100g` 营养录入。
+- 今日结构保留进度条模式，只显示达成比例和状态，不显示缺/超多少克。
+- 统计页保留最近一周/最近一月切换和趋势柱，不再显示均值卡片。
+- 分类和图标模型已更新，支持新增、重命名、删除分类和选择食物图标。
+- 旧数据迁移已覆盖隐式自定义分类、旧 `perServing` / `perPackage` / `per100ml` 营养换算。
+- `feature/unit-simplification` 已 fast-forward 合并回 `main`，临时 worktree 和功能分支已删除。
 
 ## 下一轮计划列表
 
