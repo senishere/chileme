@@ -79,6 +79,80 @@ function normalizeNutrition(nutrition) {
   };
 }
 
+function isValidNutrition(nutrition) {
+  if (!nutrition || typeof nutrition !== "object") return false;
+  return ["calories", "protein", "carbs", "fat"].every((key) => (
+    typeof nutrition[key] === "number"
+      && Number.isFinite(nutrition[key])
+      && nutrition[key] >= 0
+  ));
+}
+
+function normalizeFoods(foods, defaults) {
+  if (!Array.isArray(foods)) return defaults.foods;
+
+  const validFoods = foods.flatMap((food) => {
+    if (!food || typeof food !== "object") return [];
+    const id = typeof food.id === "string" ? food.id.trim() : "";
+    const name = typeof food.name === "string" ? food.name.trim() : "";
+    const kind = food.kind;
+    const nutritionMode = food.nutritionMode;
+    if (
+      !id
+      || !name
+      || (kind !== "regular" && kind !== "packaged")
+      || !["per100g", "perServing", "perPackage"].includes(nutritionMode)
+      || !isValidNutrition(food.nutrition)
+    ) {
+      return [];
+    }
+
+    const normalized = {
+      id,
+      name,
+      category: typeof food.category === "string" && food.category.trim()
+        ? food.category.trim()
+        : "常吃",
+      kind,
+      emoji: typeof food.emoji === "string" && food.emoji.trim()
+        ? food.emoji.trim()
+        : "🍽️",
+      image: normalizeDataUrl(food.image),
+      nutritionMode,
+      nutrition: { ...food.nutrition },
+      defaultPortionId: typeof food.defaultPortionId === "string"
+        ? food.defaultPortionId.trim()
+        : "",
+      quickAdd: food.quickAdd === false ? false : true
+    };
+
+    if (kind === "packaged") {
+      normalized.servingGrams = normalizePositiveNumber(food.servingGrams, 100);
+      normalized.packageGrams = normalizePositiveNumber(food.packageGrams, 100);
+    }
+
+    return [normalized];
+  });
+
+  return validFoods.length > 0 ? validFoods : defaults.foods;
+}
+
+function normalizePortions(portions, defaults) {
+  if (!Array.isArray(portions)) return defaults.portions;
+
+  const validPortions = portions.flatMap((portion) => {
+    if (!portion || typeof portion !== "object") return [];
+    const id = typeof portion.id === "string" ? portion.id.trim() : "";
+    const foodId = typeof portion.foodId === "string" ? portion.foodId.trim() : "";
+    const label = typeof portion.label === "string" ? portion.label.trim() : "";
+    const grams = normalizePositiveNumber(portion.grams, NaN);
+    if (!id || !foodId || !label || !Number.isFinite(grams)) return [];
+    return [{ id, foodId, label, grams }];
+  });
+
+  return validPortions.length > 0 ? validPortions : defaults.portions;
+}
+
 function dataUrlBytes(value) {
   return typeof value === "string" ? value.length : 0;
 }
@@ -155,8 +229,8 @@ export function normalizeState(input) {
   const state = input && typeof input === "object" ? input : {};
 
   return {
-    foods: Array.isArray(state.foods) ? state.foods : defaults.foods,
-    portions: Array.isArray(state.portions) ? state.portions : defaults.portions,
+    foods: normalizeFoods(state.foods, defaults),
+    portions: normalizePortions(state.portions, defaults),
     entries: normalizeEntries(state.entries),
     waterEntries: normalizeWaterEntries(state.waterEntries),
     calibration: normalizeCalibration(state.calibration, defaults),

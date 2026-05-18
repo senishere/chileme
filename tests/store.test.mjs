@@ -61,12 +61,90 @@ test("saves and reloads state", () => {
 });
 
 test("normalizes partial imported state", () => {
-  const normalized = normalizeState({ foods: [{ id: "custom", name: "自定义" }] });
+  const normalized = normalizeState({
+    foods: [{
+      id: "custom",
+      name: "自定义",
+      kind: "regular",
+      nutritionMode: "per100g",
+      nutrition: { calories: 100, protein: 5, carbs: 12, fat: 2 }
+    }]
+  });
 
   assert.equal(normalized.foods[0].id, "custom");
   assert.deepEqual(normalized.entries, []);
   assert.deepEqual(normalized.waterEntries, []);
   assert.equal(typeof normalized.dailyGoal, "object");
+});
+
+test("normalizes malformed food and portion arrays back to defaults", () => {
+  const defaults = createDefaultState();
+  const normalized = normalizeState({ foods: [null], portions: [null] });
+
+  assert.deepEqual(normalized.foods, defaults.foods);
+  assert.deepEqual(normalized.portions, defaults.portions);
+  assert.equal(normalized.foods.includes(null), false);
+  assert.equal(normalized.portions.includes(null), false);
+});
+
+test("normalizes mixed food and portion arrays by dropping invalid records", () => {
+  const normalized = normalizeState({
+    foods: [
+      null,
+      {
+        id: " custom_food ",
+        name: " 自定义鸡肉 ",
+        category: " 自定义 ",
+        kind: "packaged",
+        emoji: "🍱",
+        image: 42,
+        nutritionMode: "perServing",
+        servingGrams: 0,
+        packageGrams: "bad",
+        nutrition: { calories: 180, protein: 24, carbs: 3, fat: 6 },
+        defaultPortionId: " custom_portion ",
+        quickAdd: false
+      },
+      {
+        id: "bad_kind",
+        name: "坏类型",
+        kind: "raw",
+        nutritionMode: "per100g",
+        nutrition: { calories: 1, protein: 1, carbs: 1, fat: 1 }
+      },
+      {
+        id: "bad_nutrition",
+        name: "坏营养",
+        kind: "regular",
+        nutritionMode: "per100g",
+        nutrition: { calories: -1, protein: 1, carbs: 1, fat: 1 }
+      }
+    ],
+    portions: [
+      null,
+      { id: " custom_portion ", foodId: " custom_food ", label: " 1盒 ", grams: "125" },
+      { id: "", foodId: "custom_food", label: "空 ID", grams: 100 },
+      { id: "bad_grams", foodId: "custom_food", label: "坏克数", grams: 0 }
+    ]
+  });
+
+  assert.deepEqual(normalized.foods, [{
+    id: "custom_food",
+    name: "自定义鸡肉",
+    category: "自定义",
+    kind: "packaged",
+    emoji: "🍱",
+    image: "",
+    nutritionMode: "perServing",
+    servingGrams: 100,
+    packageGrams: 100,
+    nutrition: { calories: 180, protein: 24, carbs: 3, fat: 6 },
+    defaultPortionId: "custom_portion",
+    quickAdd: false
+  }]);
+  assert.deepEqual(normalized.portions, [
+    { id: "custom_portion", foodId: "custom_food", label: "1盒", grams: 125 }
+  ]);
 });
 
 test("normalizes malformed entries and water entries", () => {
