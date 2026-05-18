@@ -187,6 +187,7 @@ function renderStats() {
       <span>${formatNumber(day.calories)} kcal</span>
       <span>${formatNumber(day.protein, 1)}g 蛋白</span>
       <span>${formatNumber(day.waterMl / 1000, 1)}L</span>
+      <span>${formatNumber(day.entryCount)}条记录</span>
     </article>
   `).join("");
 
@@ -199,6 +200,12 @@ function renderStats() {
 }
 
 function renderSettings() {
+  const firstContainer = state.calibration.containers?.[0] || {
+    id: "container_custom",
+    label: "常用容器",
+    capacityMl: 350
+  };
+
   root.innerHTML = `
     <section class="panel">
       <div class="section-head"><h2>设置</h2><span class="hint">本地数据</span></div>
@@ -208,6 +215,9 @@ function renderSettings() {
         <label class="field"><span>饮水目标 ml</span><input name="waterMl" inputmode="numeric" value="${escapeAttr(state.dailyGoal.waterMl || "")}"></label>
         <label class="field"><span>拳头宽度 cm</span><input name="fistWidthCm" inputmode="decimal" value="${escapeAttr(state.calibration.fistWidthCm || "")}"></label>
         <label class="field"><span>掌心宽度 cm</span><input name="palmWidthCm" inputmode="decimal" value="${escapeAttr(state.calibration.palmWidthCm || "")}"></label>
+        <label class="field"><span>手指宽度 cm</span><input name="fingerWidthCm" inputmode="decimal" value="${escapeAttr(state.calibration.fingerWidthCm || "")}"></label>
+        <label class="field"><span>常用容器名称</span><input name="containerLabel" value="${escapeAttr(firstContainer.label || "")}"></label>
+        <label class="field"><span>常用容器容量 ml</span><input name="containerCapacityMl" inputmode="decimal" value="${escapeAttr(firstContainer.capacityMl || "")}"></label>
         <button class="button" type="submit">保存设置</button>
       </form>
       <div class="actions-row">
@@ -436,6 +446,14 @@ document.addEventListener("submit", async (event) => {
   if (action === "save-food") await handleFoodSubmit(form);
   if (action === "save-settings") {
     const data = new FormData(form);
+    const existingContainers = Array.isArray(state.calibration.containers)
+      ? state.calibration.containers
+      : [];
+    const firstContainer = existingContainers[0] || {
+      id: "container_custom",
+      label: "常用容器",
+      capacityMl: 350
+    };
     state.dailyGoal = {
       calories: Number(data.get("calories")) || 0,
       protein: Number(data.get("protein")) || 0,
@@ -444,7 +462,16 @@ document.addEventListener("submit", async (event) => {
     state.calibration = {
       ...state.calibration,
       fistWidthCm: Number(data.get("fistWidthCm")) || 0,
-      palmWidthCm: Number(data.get("palmWidthCm")) || 0
+      palmWidthCm: Number(data.get("palmWidthCm")) || 0,
+      fingerWidthCm: Number(data.get("fingerWidthCm")) || 0,
+      containers: [
+        {
+          ...firstContainer,
+          label: String(data.get("containerLabel") || firstContainer.label || "常用容器"),
+          capacityMl: Number(data.get("containerCapacityMl")) || firstContainer.capacityMl || 0
+        },
+        ...existingContainers.slice(1)
+      ]
     };
     saveAndRender();
   }
