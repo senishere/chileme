@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createDefaultState } from "../src/domain.js";
+import { activeRecordState, createDefaultState, getActiveProfile } from "../src/domain.js";
 import {
   MAX_STORED_DATA_URL_BYTES,
   createStore,
@@ -26,12 +26,25 @@ function memoryStorage() {
 
 test("loads default simplified state when storage is empty", () => {
   const state = createStore(memoryStorage()).load();
+  const active = getActiveProfile(state);
 
   assert.equal(state.foods.length >= 50, true);
   assert.equal(state.categories.some((category) => category.name === "其他"), true);
   assert.equal("portions" in state, false);
   assert.equal("calibration" in state, false);
-  assert.deepEqual(state.entries, []);
+  assert.deepEqual(active.entries, []);
+});
+
+test("loads default state with one local profile", () => {
+  const state = createStore(memoryStorage()).load();
+  const active = getActiveProfile(state);
+
+  assert.equal(state.activeProfileId, "profile_default");
+  assert.equal(state.profiles.length, 1);
+  assert.equal(active.name, "日常维持");
+  assert.deepEqual(active.entries, []);
+  assert.deepEqual(active.waterEntries, []);
+  assert.equal(active.dailyGoal.fiber, 25);
 });
 
 test("clears corrupt persisted state and loads defaults", () => {
@@ -39,10 +52,222 @@ test("clears corrupt persisted state and loads defaults", () => {
   storage.setItem("chileme.state.v1", "{bad json");
 
   const state = createStore(storage).load();
+  const active = getActiveProfile(state);
 
   assert.equal(state.foods.length >= 50, true);
-  assert.equal(state.entries.length, 0);
+  assert.equal(active.entries.length, 0);
   assert.equal(storage.getItem("chileme.state.v1"), null);
+});
+
+test("migrates legacy top-level records into the default profile", () => {
+  const normalized = normalizeState({
+    profile: { sex: "male", age: "42", heightCm: "178", weightKg: "76", activityLevel: "moderate", goal: "gain" },
+    dailyGoal: { calories: null, protein: 0, waterMl: "2300" },
+    entries: [{
+      id: "entry_legacy",
+      timestamp: "2026-05-18T12:00:00",
+      items: [{
+        foodId: "food_rice",
+        amount: 150,
+        unit: "g",
+        nutrition: { calories: 174, protein: 3.9, carbs: 38.85, fat: 0.45, sodium: 1.5 }
+      }],
+      note: "keep",
+      photo: ""
+    }],
+    waterEntries: [{ id: "water_legacy", timestamp: "2026-05-18T09:00:00", milliliters: 300 }]
+  });
+  const active = getActiveProfile(normalized);
+
+  assert.equal(normalized.entries, undefined);
+  assert.equal(normalized.waterEntries, undefined);
+  assert.equal(active.profile.sex, "male");
+  assert.deepEqual(active.dailyGoal, { calories: null, protein: null, waterMl: 2300, fiber: 25 });
+  assert.equal(active.entries[0].id, "entry_legacy");
+  assert.equal(active.entries[0].items[0].nutrition.fiber, 0);
+  assert.equal(active.waterEntries[0].id, "water_legacy");
+});
+
+test("normalizes multi-profile state and repairs invalid active profile", () => {
+  const normalized = normalizeState({
+    activeProfileId: "missing",
+    profiles: [{
+      id: "profile_a",
+      name: "日常",
+      dailyGoal: { calories: 1800, protein: 90, waterMl: 2000, fiber: 20 },
+      entries: [{
+        id: "entry_a",
+        timestamp: "2026-05-18T12:00:00",
+        items: [{
+          foodId: "food_rice",
+          amount: "100",
+          unit: "g",
+          nutrition: { calories: "116", protein: 2.6, carbs: 25.9, fat: 0.3, sodium: 1, fiber: 0.3 }
+        }],
+        note: "",
+        photo: ""
+      }],
+      waterEntries: []
+    }, {
+      id: "profile_b",
+      name: "减脂期",
+      dailyGoal: { calories: 1500, protein: 110, waterMl: 2200, fiber: 28 },
+      entries: [],
+      waterEntries: [{ id: "water_b", timestamp: "2026-05-18T09:00:00", milliliters: "500" }]
+    }]
+  });
+
+  assert.equal(normalized.activeProfileId, "profile_a");
+  assert.equal(normalized.profiles.length, 2);
+  assert.equal(normalized.profiles[0].entries[0].items[0].nutrition.fiber, 0.3);
+  assert.equal(normalized.profiles[1].waterEntries[0].milliliters, 500);
+  assert.equal(activeRecordState(normalized).entries[0].id, "entry_a");
+});
+
+test("normalizes duplicate profile ids without dropping profile records", () => {
+  const normalized = normalizeState({
+    profiles: [{
+      id: " profile_1 ",
+      name: "日常",
+      entries: [{
+        id: "entry_first",
+        timestamp: "2026-05-18T12:00:00",
+        items: [],
+        note: "",
+        photo: ""
+      }],
+      waterEntries: []
+    }, {
+      id: "profile_1",
+      name: "训练日",
+      entries: [{
+        id: "entry_second",
+        timestamp: "2026-05-18T18:00:00",
+        items: [],
+        note: "",
+        photo: ""
+      }],
+      waterEntries: [{ id: "water_second", timestamp: "2026-05-18T19:00:00", milliliters: 400 }]
+    }]
+  });
+
+  assert.equal(normalized.profiles.length, 2);
+  assert.equal(normalized.profiles[0].id, "profile_1");
+  assert.notEqual(normalized.profiles[1].id, "profile_1");
+  assert.equal(normalized.profiles[1].id.startsWith("profile_1_"), true);
+  assert.equal(normalized.profiles[0].entries[0].id, "entry_first");
+  assert.equal(normalized.profiles[1].entries[0].id, "entry_second");
+  assert.equal(normalized.profiles[1].waterEntries[0].id, "water_second");
+});
+
+test("repairs duplicate ids without stealing later real profile ids", () => {
+  const normalized = normalizeState({
+    activeProfileId: "profile_1_2",
+    profiles: [{
+      id: "profile_1",
+      name: "日常",
+      entries: [{
+        id: "entry_first",
+        timestamp: "2026-05-18T08:00:00",
+        items: [],
+        note: "",
+        photo: ""
+      }],
+      waterEntries: []
+    }, {
+      id: "profile_1",
+      name: "重复",
+      entries: [{
+        id: "entry_duplicate",
+        timestamp: "2026-05-18T12:00:00",
+        items: [],
+        note: "",
+        photo: ""
+      }],
+      waterEntries: []
+    }, {
+      id: "profile_1_2",
+      name: "真实后缀",
+      entries: [{
+        id: "entry_real_suffix",
+        timestamp: "2026-05-18T18:00:00",
+        items: [],
+        note: "",
+        photo: ""
+      }],
+      waterEntries: [{ id: "water_real_suffix", timestamp: "2026-05-18T19:00:00", milliliters: 500 }]
+    }]
+  });
+  const ids = normalized.profiles.map((profile) => profile.id);
+
+  assert.equal(normalized.profiles.length, 3);
+  assert.equal(new Set(ids).size, 3);
+  assert.equal(normalized.profiles[2].id, "profile_1_2");
+  assert.equal(getActiveProfile(normalized).entries[0].id, "entry_real_suffix");
+  assert.equal(getActiveProfile(normalized).waterEntries[0].id, "water_real_suffix");
+});
+
+test("repairs blank fallback ids without stealing later real profile ids", () => {
+  const normalized = normalizeState({
+    activeProfileId: "profile_1",
+    profiles: [{
+      id: " ",
+      name: "空 ID",
+      entries: [{
+        id: "entry_blank",
+        timestamp: "2026-05-18T08:00:00",
+        items: [],
+        note: "",
+        photo: ""
+      }],
+      waterEntries: []
+    }, {
+      id: "profile_1",
+      name: "真实 ID",
+      entries: [{
+        id: "entry_real",
+        timestamp: "2026-05-18T12:00:00",
+        items: [],
+        note: "",
+        photo: ""
+      }],
+      waterEntries: [{ id: "water_real", timestamp: "2026-05-18T13:00:00", milliliters: 350 }]
+    }]
+  });
+  const ids = normalized.profiles.map((profile) => profile.id);
+
+  assert.equal(normalized.profiles.length, 2);
+  assert.equal(new Set(ids).size, 2);
+  assert.notEqual(normalized.profiles[0].id, "profile_1");
+  assert.equal(normalized.profiles[1].id, "profile_1");
+  assert.equal(getActiveProfile(normalized).entries[0].id, "entry_real");
+  assert.equal(getActiveProfile(normalized).waterEntries[0].id, "water_real");
+});
+
+test("normalizes active profile id before repairing active profile", () => {
+  const normalized = normalizeState({
+    activeProfileId: " profile_b ",
+    profiles: [{
+      id: "profile_a",
+      name: "日常",
+      entries: [],
+      waterEntries: []
+    }, {
+      id: " profile_b ",
+      name: "减脂期",
+      entries: [{
+        id: "entry_b",
+        timestamp: "2026-05-18T12:00:00",
+        items: [],
+        note: "",
+        photo: ""
+      }],
+      waterEntries: []
+    }]
+  });
+
+  assert.equal(normalized.activeProfileId, "profile_b");
+  assert.equal(getActiveProfile(normalized).entries[0].id, "entry_b");
 });
 
 test("normalizes legacy food categories, nutrition, and simplified shape", () => {
@@ -97,7 +322,8 @@ test("normalizes legacy food categories, nutrition, and simplified shape", () =>
     protein: 3,
     carbs: 12,
     fat: 2,
-    sodium: 0
+    sodium: 0,
+    fiber: 0
   });
   assert.equal(normalized.foods.find((food) => food.id === "legacy_rice").icon, "🍚");
   assert.equal(normalized.foods.find((food) => food.id === "legacy_custom").category, "自定义");
@@ -209,21 +435,24 @@ test("converts legacy serving and package nutrition to per 100g", () => {
     protein: 20,
     carbs: 40,
     fat: 10,
-    sodium: 200
+    sodium: 200,
+    fiber: 0
   });
   assert.deepEqual(normalized.foods.find((food) => food.id === "package_food").nutritionPer100g, {
     calories: 450,
     protein: 10,
     carbs: 60,
     fat: 20,
-    sodium: 550
+    sodium: 550,
+    fiber: 0
   });
   assert.deepEqual(normalized.foods.find((food) => food.id === "drink_food").nutritionPer100g, {
     calories: 45,
     protein: 0,
     carbs: 11,
     fat: 0,
-    sodium: 5
+    sodium: 5,
+    fiber: 0
   });
 });
 
@@ -271,8 +500,9 @@ test("normalizes entries by dropping portion metadata and preserving ml as grams
       { id: "water_bad", timestamp: "bad", milliliters: 300 }
     ]
   });
+  const active = getActiveProfile(normalized);
 
-  assert.deepEqual(normalized.entries, [
+  assert.deepEqual(active.entries, [
     {
       id: "entry_valid",
       timestamp: "2026-05-18T12:00:00+08:00",
@@ -282,14 +512,14 @@ test("normalizes entries by dropping portion metadata and preserving ml as grams
           amount: 250,
           unit: "ml",
           grams: 250,
-          nutrition: { calories: 152.5, protein: 8, carbs: 0, fat: 0, sodium: 105 }
+          nutrition: { calories: 152.5, protein: 8, carbs: 0, fat: 0, sodium: 105, fiber: 0 }
         }
       ],
       note: "",
       photo: ""
     }
   ]);
-  assert.deepEqual(normalized.waterEntries, [
+  assert.deepEqual(active.waterEntries, [
     { id: "water_valid", timestamp: "2026-05-18T09:00:00+08:00", milliliters: 300 }
   ]);
 });
@@ -310,8 +540,9 @@ test("preserves normalized profile and daily goals", () => {
       waterMl: "2300"
     }
   });
+  const active = getActiveProfile(normalized);
 
-  assert.deepEqual(normalized.profile, {
+  assert.deepEqual(active.profile, {
     sex: "male",
     age: 42,
     heightCm: 178,
@@ -319,10 +550,11 @@ test("preserves normalized profile and daily goals", () => {
     activityLevel: "moderate",
     goal: "gain"
   });
-  assert.deepEqual(normalized.dailyGoal, {
+  assert.deepEqual(active.dailyGoal, {
     calories: null,
     protein: null,
-    waterMl: 2300
+    waterMl: 2300,
+    fiber: 25
   });
 });
 
@@ -353,18 +585,19 @@ test("createStore.load does not throw or erase legacy state", () => {
   }));
 
   const state = createStore(storage).load();
+  const active = getActiveProfile(state);
 
   assert.equal(state.foods.find((food) => food.id === "legacy_food").category, "动物蛋白");
-  assert.equal(state.entries[0].id, "entry_legacy");
-  assert.equal("portionId" in state.entries[0].items[0], false);
-  assert.equal("label" in state.entries[0].items[0], false);
+  assert.equal(active.entries[0].id, "entry_legacy");
+  assert.equal("portionId" in active.entries[0].items[0], false);
+  assert.equal("label" in active.entries[0].items[0], false);
 });
 
 test("saves and reloads simplified state", () => {
   const storage = memoryStorage();
   const store = createStore(storage);
   const state = createDefaultState();
-  state.entries.push({
+  getActiveProfile(state).entries.push({
     id: "entry_test",
     timestamp: "2026-05-18T12:00:00+08:00",
     items: [],
@@ -375,7 +608,7 @@ test("saves and reloads simplified state", () => {
   store.save(state);
 
   const loaded = createStore(storage).load();
-  assert.equal(loaded.entries[0].id, "entry_test");
+  assert.equal(getActiveProfile(loaded).entries[0].id, "entry_test");
   assert.equal("portions" in loaded, false);
   assert.equal("calibration" in loaded, false);
 });
@@ -415,7 +648,7 @@ test("save retries without entry photos when storage quota rejects the full stat
   storage.getItem = (key) => key === storage.savedKey ? storage.savedValue : null;
   const store = createStore(storage);
   const state = createDefaultState();
-  state.entries.push({
+  getActiveProfile(state).entries.push({
     id: "entry_photo",
     timestamp: "2026-05-18T12:00:00+08:00",
     items: [],
@@ -425,19 +658,20 @@ test("save retries without entry photos when storage quota rejects the full stat
 
   const result = store.save(state);
   const loaded = createStore(storage).load();
+  const active = getActiveProfile(loaded);
 
   assert.equal(attempts, 2);
   assert.equal(result.droppedPhotos, true);
-  assert.equal(loaded.entries[0].id, "entry_photo");
-  assert.equal(loaded.entries[0].note, "keep me");
-  assert.equal(loaded.entries[0].photo, "");
+  assert.equal(active.entries[0].id, "entry_photo");
+  assert.equal(active.entries[0].note, "keep me");
+  assert.equal(active.entries[0].photo, "");
 });
 
 test("save reports oversized entry photos dropped during normalization", () => {
   const storage = memoryStorage();
   const store = createStore(storage);
   const state = createDefaultState();
-  state.entries.push({
+  getActiveProfile(state).entries.push({
     id: "entry_oversized",
     timestamp: "2026-05-18T12:00:00+08:00",
     items: [],
@@ -447,15 +681,38 @@ test("save reports oversized entry photos dropped during normalization", () => {
 
   const result = store.save(state);
   const loaded = createStore(storage).load();
+  const active = getActiveProfile(loaded);
 
   assert.equal(result.droppedPhotos, true);
-  assert.equal(loaded.entries[0].id, "entry_oversized");
-  assert.equal(loaded.entries[0].photo, "");
+  assert.equal(active.entries[0].id, "entry_oversized");
+  assert.equal(active.entries[0].photo, "");
+});
+
+test("save reports oversized photos from legacy top-level entries", () => {
+  const storage = memoryStorage();
+  const store = createStore(storage);
+  const state = {
+    entries: [{
+      id: "entry_legacy_oversized",
+      timestamp: "2026-05-18T12:00:00+08:00",
+      items: [],
+      note: "",
+      photo: `data:image/jpeg;base64,${"a".repeat(MAX_STORED_DATA_URL_BYTES)}`
+    }]
+  };
+
+  const result = store.save(state);
+  const loaded = createStore(storage).load();
+  const active = getActiveProfile(loaded);
+
+  assert.equal(result.droppedPhotos, true);
+  assert.equal(active.entries[0].id, "entry_legacy_oversized");
+  assert.equal(active.entries[0].photo, "");
 });
 
 test("exports and imports JSON state", () => {
   const state = createDefaultState();
-  state.entries.push({
+  getActiveProfile(state).entries.push({
     id: "entry_export",
     timestamp: "2026-05-18T12:00:00+08:00",
     items: [],
@@ -465,7 +722,7 @@ test("exports and imports JSON state", () => {
 
   const imported = importState(exportState(state));
 
-  assert.equal(imported.entries[0].id, "entry_export");
+  assert.equal(getActiveProfile(imported).entries[0].id, "entry_export");
   assert.equal("portions" in imported, false);
 });
 

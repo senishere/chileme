@@ -1,7 +1,9 @@
 import {
+  DEFAULT_PROFILE_ID,
   EMPTY_NUTRITION,
   ICON_OPTIONS,
   createDefaultState,
+  createLocalProfile,
   nonNegativeFiniteNumber,
   positiveFiniteNumber,
   roundMetric
@@ -26,7 +28,8 @@ function normalizeDailyGoal(dailyGoal, defaults) {
     ...defaults.dailyGoal,
     calories: normalizeGoalValue(dailyGoal.calories, defaults.dailyGoal.calories),
     protein: normalizeGoalValue(dailyGoal.protein, defaults.dailyGoal.protein),
-    waterMl: normalizeGoalValue(dailyGoal.waterMl, defaults.dailyGoal.waterMl)
+    waterMl: normalizeGoalValue(dailyGoal.waterMl, defaults.dailyGoal.waterMl),
+    fiber: normalizeGoalValue(dailyGoal.fiber, defaults.dailyGoal.fiber)
   };
 }
 
@@ -65,7 +68,8 @@ function normalizeNutrition(nutrition) {
     protein: nonNegativeFiniteNumber(nutrition.protein, 0),
     carbs: nonNegativeFiniteNumber(nutrition.carbs, 0),
     fat: nonNegativeFiniteNumber(nutrition.fat, 0),
-    sodium: nonNegativeFiniteNumber(nutrition.sodium, 0)
+    sodium: nonNegativeFiniteNumber(nutrition.sodium, 0),
+    fiber: nonNegativeFiniteNumber(nutrition.fiber, 0)
   };
 }
 
@@ -79,7 +83,11 @@ function isValidNutrition(nutrition) {
     const number = Number(nutrition.sodium);
     return Number.isFinite(number) && number >= 0;
   })();
-  return baseValid && sodiumValid;
+  const fiberValid = nutrition.fiber === undefined || (() => {
+    const number = Number(nutrition.fiber);
+    return Number.isFinite(number) && number >= 0;
+  })();
+  return baseValid && sodiumValid && fiberValid;
 }
 
 function mergeById(primary, defaults) {
@@ -200,7 +208,8 @@ function scaleNutrition(nutrition, factor) {
     protein: roundMetric((nutrition.protein || 0) * factor),
     carbs: roundMetric((nutrition.carbs || 0) * factor),
     fat: roundMetric((nutrition.fat || 0) * factor),
-    sodium: roundMetric((nutrition.sodium || 0) * factor)
+    sodium: roundMetric((nutrition.sodium || 0) * factor),
+    fiber: roundMetric((nutrition.fiber || 0) * factor)
   };
 }
 
@@ -320,34 +329,117 @@ function normalizeWaterEntries(waterEntries) {
   });
 }
 
+function normalizeProfileId(value, fallback) {
+  const id = typeof value === "string" ? value.trim() : "";
+  return id || fallback;
+}
+
+function uniqueProfileId(baseId, unavailable) {
+  if (!unavailable.has(baseId)) return baseId;
+  let suffix = 2;
+  let id = `${baseId}_${suffix}`;
+  while (unavailable.has(id)) {
+    suffix += 1;
+    id = `${baseId}_${suffix}`;
+  }
+  return id;
+}
+
+function normalizeLocalProfileName(value, fallback) {
+  const name = typeof value === "string" ? value.trim() : "";
+  return name || fallback;
+}
+
+function normalizeLocalProfile(profile, defaults, fallbackId, fallbackName) {
+  const source = profile && typeof profile === "object" ? profile : {};
+  return createLocalProfile({
+    id: normalizeProfileId(source.id, fallbackId),
+    name: normalizeLocalProfileName(source.name, fallbackName),
+    profile: normalizeProfile(source.profile, defaults),
+    dailyGoal: normalizeDailyGoal(source.dailyGoal, defaults),
+    entries: normalizeEntries(source.entries),
+    waterEntries: normalizeWaterEntries(source.waterEntries)
+  });
+}
+
+function normalizeProfiles(state, defaults) {
+  if (Array.isArray(state.profiles) && state.profiles.length > 0) {
+    const profileSources = state.profiles.map((profile, index) => ({
+      profile,
+      originalId: normalizeProfileId(profile?.id, ""),
+      fallbackId: `profile_${index + 1}`,
+      fallbackName: `档案 ${index + 1}`
+    }));
+    const reservedOriginalIds = new Set(profileSources.map((source) => source.originalId).filter(Boolean));
+    const emittedIds = new Set();
+    const profiles = profileSources.flatMap((source) => {
+      const normalized = normalizeLocalProfile(
+        source.profile,
+        defaults.profiles[0],
+        source.fallbackId,
+        source.fallbackName
+      );
+      const canUseOriginalId = source.originalId && !emittedIds.has(source.originalId);
+      const unavailableIds = new Set([...reservedOriginalIds, ...emittedIds]);
+      normalized.id = canUseOriginalId ? source.originalId : uniqueProfileId(normalized.id, unavailableIds);
+      emittedIds.add(normalized.id);
+      return [normalized];
+    });
+    return profiles.length > 0 ? profiles : defaults.profiles;
+  }
+
+  return [
+    createLocalProfile({
+      id: DEFAULT_PROFILE_ID,
+      name: "日常维持",
+      profile: normalizeProfile(state.profile, defaults.profiles[0]),
+      dailyGoal: normalizeDailyGoal(state.dailyGoal, defaults.profiles[0]),
+      entries: normalizeEntries(state.entries),
+      waterEntries: normalizeWaterEntries(state.waterEntries)
+    })
+  ];
+}
+
 export function normalizeState(input) {
   const defaults = createDefaultState();
   const state = input && typeof input === "object" ? input : {};
   const categories = normalizeCategories(state.categories, defaults, state.foods);
+  const profiles = normalizeProfiles(state, defaults);
+  const requestedActiveProfileId = normalizeProfileId(state.activeProfileId, "");
+  const activeProfileId = profiles.some((profile) => profile.id === requestedActiveProfileId)
+    ? requestedActiveProfileId
+    : profiles[0].id;
 
   return {
+    activeProfileId,
+    profiles,
     categories,
-    foods: normalizeFoods(state.foods, defaults, categories),
-    entries: normalizeEntries(state.entries),
-    waterEntries: normalizeWaterEntries(state.waterEntries),
-    profile: normalizeProfile(state.profile, defaults),
-    dailyGoal: normalizeDailyGoal(state.dailyGoal, defaults)
+    foods: normalizeFoods(state.foods, defaults, categories)
   };
 }
 
 function stripEntryPhotos(state) {
   let droppedPhotos = false;
-  const entries = state.entries.map((entry) => {
-    if (!entry.photo) return entry;
-    droppedPhotos = true;
-    return { ...entry, photo: "" };
-  });
-  return { state: { ...state, entries }, droppedPhotos };
+  const profiles = state.profiles.map((profile) => ({
+    ...profile,
+    entries: profile.entries.map((entry) => {
+      if (!entry.photo) return entry;
+      droppedPhotos = true;
+      return { ...entry, photo: "" };
+    })
+  }));
+  return { state: { ...state, profiles }, droppedPhotos };
 }
 
 function hasOversizedEntryPhoto(state) {
-  return Array.isArray(state?.entries)
+  const hasOversizedTopLevelPhoto = Array.isArray(state?.entries)
     && state.entries.some((entry) => dataUrlBytes(entry?.photo) > MAX_STORED_DATA_URL_BYTES);
+  const hasOversizedProfilePhoto = Array.isArray(state?.profiles)
+    && state.profiles.some((profile) => (
+      Array.isArray(profile.entries)
+      && profile.entries.some((entry) => dataUrlBytes(entry?.photo) > MAX_STORED_DATA_URL_BYTES)
+    ));
+  return hasOversizedTopLevelPhoto || hasOversizedProfilePhoto;
 }
 
 export function createStore(storage = globalThis.localStorage) {
@@ -372,7 +464,7 @@ export function createStore(storage = globalThis.localStorage) {
         throw new Error("当前浏览器无法保存数据");
       }
       const normalized = normalizeState(state);
-      let droppedPhotos = hasOversizedEntryPhoto(state);
+      let droppedPhotos = hasOversizedEntryPhoto(state) || hasOversizedEntryPhoto(normalized);
       try {
         storage.setItem(STORAGE_KEY, JSON.stringify(normalized));
         return { state: normalized, droppedPhotos };
@@ -400,7 +492,7 @@ export function importState(json) {
     const hasStateShape = parsed
       && typeof parsed === "object"
       && !Array.isArray(parsed)
-      && ["categories", "foods", "entries", "waterEntries", "profile", "dailyGoal"].some((key) => key in parsed);
+      && ["categories", "foods", "profiles", "activeProfileId", "entries", "waterEntries", "profile", "dailyGoal"].some((key) => key in parsed);
     if (!hasStateShape) {
       throw new Error("完整备份 JSON");
     }
