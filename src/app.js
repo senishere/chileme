@@ -1,21 +1,28 @@
 import {
   ICON_OPTIONS,
   addCategory,
+  addLocalProfile,
+  activeRecordState,
   buildEntryItem,
   createId,
   dateKey,
   defaultIconForCategory,
   deleteCategory,
+  deleteLocalProfile,
   dailyStructure,
   exportLogRows,
   exportRowsAsCsv,
   filterFoods,
   findFood,
+  getActiveProfile,
   nonNegativeFiniteNumber,
   positiveFiniteNumber,
   renameCategory,
+  renameLocalProfile,
+  setActiveProfile,
   summarizeDay,
-  trendStats
+  trendStats,
+  updateActiveProfile
 } from "./domain.js";
 import {
   createStore,
@@ -26,6 +33,7 @@ import {
   amountLabel,
   escapeAttr,
   escapeHtml,
+  caloriesFromEnergyInputs,
   formatNumber,
   formatTime,
   itemAmountLabel
@@ -103,8 +111,8 @@ function renderCategoryChips(categories, activeCategory, action) {
   `;
 }
 
-function renderSummary(day) {
-  const summary = summarizeDay(state, day);
+function renderSummary(day, records = activeRecordState(state)) {
+  const summary = summarizeDay(records, day);
   return `
     <section class="summary-grid" aria-label="今日概览">
       <article class="metric-card"><div class="metric-value">${formatNumber(summary.calories)}</div><div class="metric-label">kcal 粗略</div></article>
@@ -128,12 +136,13 @@ function structureIcon(key) {
   if (key === "protein") return "🥚";
   if (key === "carbs") return "🍚";
   if (key === "fat") return "🥑";
+  if (key === "fiber") return "🌾";
   if (key === "waterMl") return "💧";
   return "🍽️";
 }
 
-function renderStructure(day) {
-  const metrics = dailyStructure(state, day);
+function renderStructure(day, records = activeRecordState(state)) {
+  const metrics = dailyStructure(records, day);
   const rows = Object.entries(metrics).map(([key, metric]) => {
     const progress = Math.min(100, Math.round((metric.ratio || 0) * 100));
     const ratioLabel = `${Math.round((metric.ratio || 0) * 100)}%`;
@@ -189,17 +198,17 @@ function renderQuickAdd() {
   `;
 }
 
-function renderTimeline(day) {
-  const entries = state.entries
+function renderTimeline(day, records = activeRecordState(state)) {
+  const entries = records.entries
     .filter((entry) => dateKey(entry.timestamp) === day)
     .map((entry) => ({ type: "food", timestamp: entry.timestamp, entry }));
-  const waterEntries = state.waterEntries
+  const waterEntries = records.waterEntries
     .filter((entry) => dateKey(entry.timestamp) === day)
     .map((entry) => ({ type: "water", timestamp: entry.timestamp, entry }));
-  const records = [...entries, ...waterEntries]
+  const timelineRecords = [...entries, ...waterEntries]
     .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
-  if (!records.length) {
+  if (!timelineRecords.length) {
     return `
       <section class="panel">
         <div class="section-head"><h2>今日记录</h2><span class="hint">上下滚动</span></div>
@@ -208,7 +217,7 @@ function renderTimeline(day) {
     `;
   }
 
-  const rows = records.map((record) => {
+  const rows = timelineRecords.map((record) => {
     if (record.type === "water") {
       const water = record.entry;
       return `
@@ -256,8 +265,15 @@ function renderTimeline(day) {
 
 function renderToday() {
   const day = dateKey();
+  const records = activeRecordState(state);
+  const activeProfile = getActiveProfile(state);
   todayLabel.textContent = `今天 · ${day}`;
-  root.innerHTML = renderSummary(day) + renderStructure(day) + renderQuickAdd() + renderTimeline(day);
+  root.innerHTML = `
+    <section class="panel profile-banner">
+      <span class="hint">当前档案</span>
+      <strong class="profile-name">${escapeHtml(activeProfile.name)}</strong>
+    </section>
+  ` + renderSummary(day, records) + renderStructure(day, records) + renderQuickAdd() + renderTimeline(day, records);
 }
 
 function renderFoodRows() {
@@ -308,7 +324,8 @@ function renderFoods() {
 }
 
 function renderStats() {
-  const stats = trendStats(state, dateKey(), statsDays);
+  const records = activeRecordState(state);
+  const stats = trendStats(records, dateKey(), statsDays);
   const maxCalories = Math.max(1, ...stats.map((day) => day.calories));
   const totalCalories = stats.reduce((sum, day) => sum + day.calories, 0);
   const averageCalories = Math.round(totalCalories / stats.length);
@@ -347,19 +364,37 @@ function trendLabel(day, index, total) {
 }
 
 function renderSettings() {
+  const activeProfile = getActiveProfile(state);
+  const profile = activeProfile.profile;
+  const dailyGoal = activeProfile.dailyGoal;
   root.innerHTML = `
     <section class="panel">
       <div class="section-head"><h2>设置</h2><span class="hint">本地数据</span></div>
+      <div class="settings-group">
+        <h3>当前档案</h3>
+        <label class="field">
+          <span>当前档案</span>
+          <select name="activeProfileId" data-action="set-active-profile">
+            ${state.profiles.map((item) => `<option value="${escapeAttr(item.id)}" ${item.id === state.activeProfileId ? "selected" : ""}>${escapeHtml(item.name)}</option>`).join("")}
+          </select>
+        </label>
+        <div class="actions-row">
+          <button class="button secondary" type="button" data-action="add-profile">新增档案</button>
+          <button class="button secondary" type="button" data-action="rename-profile">重命名</button>
+          <button class="button secondary" type="button" data-action="delete-profile">删除档案</button>
+        </div>
+      </div>
       <form class="form-grid" data-action="save-settings">
-        <label class="field"><span>热量目标 kcal</span><input name="calories" inputmode="numeric" value="${escapeAttr(state.dailyGoal.calories || "")}"></label>
-        <label class="field"><span>蛋白质目标 g</span><input name="protein" inputmode="numeric" value="${escapeAttr(state.dailyGoal.protein || "")}"></label>
-        <label class="field"><span>饮水目标 ml</span><input name="waterMl" inputmode="numeric" value="${escapeAttr(state.dailyGoal.waterMl || "")}"></label>
-        <label class="field"><span>性别</span><select name="sex"><option value="female" ${state.profile.sex === "female" ? "selected" : ""}>女</option><option value="male" ${state.profile.sex === "male" ? "selected" : ""}>男</option></select></label>
-        <label class="field"><span>年龄</span><input name="age" inputmode="numeric" value="${escapeAttr(state.profile.age || "")}"></label>
-        <label class="field"><span>身高 cm</span><input name="heightCm" inputmode="decimal" value="${escapeAttr(state.profile.heightCm || "")}"></label>
-        <label class="field"><span>体重 kg</span><input name="weightKg" inputmode="decimal" value="${escapeAttr(state.profile.weightKg || "")}"></label>
-        <label class="field"><span>活动水平</span><select name="activityLevel"><option value="sedentary" ${state.profile.activityLevel === "sedentary" ? "selected" : ""}>久坐</option><option value="light" ${state.profile.activityLevel === "light" ? "selected" : ""}>轻度</option><option value="moderate" ${state.profile.activityLevel === "moderate" ? "selected" : ""}>中等</option><option value="active" ${state.profile.activityLevel === "active" ? "selected" : ""}>较高</option></select></label>
-        <label class="field"><span>目标</span><select name="goal"><option value="maintain" ${state.profile.goal === "maintain" ? "selected" : ""}>维持</option><option value="lose" ${state.profile.goal === "lose" ? "selected" : ""}>减脂</option><option value="gain" ${state.profile.goal === "gain" ? "selected" : ""}>增肌</option></select></label>
+        <label class="field"><span>热量目标 kcal</span><input name="calories" inputmode="numeric" value="${escapeAttr(dailyGoal.calories || "")}"></label>
+        <label class="field"><span>蛋白质目标 g</span><input name="protein" inputmode="numeric" value="${escapeAttr(dailyGoal.protein || "")}"></label>
+        <label class="field"><span>膳食纤维目标 g</span><input name="fiber" inputmode="numeric" value="${escapeAttr(dailyGoal.fiber || "")}"></label>
+        <label class="field"><span>饮水目标 ml</span><input name="waterMl" inputmode="numeric" value="${escapeAttr(dailyGoal.waterMl || "")}"></label>
+        <label class="field"><span>性别</span><select name="sex"><option value="female" ${profile.sex === "female" ? "selected" : ""}>女</option><option value="male" ${profile.sex === "male" ? "selected" : ""}>男</option></select></label>
+        <label class="field"><span>年龄</span><input name="age" inputmode="numeric" value="${escapeAttr(profile.age || "")}"></label>
+        <label class="field"><span>身高 cm</span><input name="heightCm" inputmode="decimal" value="${escapeAttr(profile.heightCm || "")}"></label>
+        <label class="field"><span>体重 kg</span><input name="weightKg" inputmode="decimal" value="${escapeAttr(profile.weightKg || "")}"></label>
+        <label class="field"><span>活动水平</span><select name="activityLevel"><option value="sedentary" ${profile.activityLevel === "sedentary" ? "selected" : ""}>久坐</option><option value="light" ${profile.activityLevel === "light" ? "selected" : ""}>轻度</option><option value="moderate" ${profile.activityLevel === "moderate" ? "selected" : ""}>中等</option><option value="active" ${profile.activityLevel === "active" ? "selected" : ""}>较高</option></select></label>
+        <label class="field"><span>目标</span><select name="goal"><option value="maintain" ${profile.goal === "maintain" ? "selected" : ""}>维持</option><option value="lose" ${profile.goal === "lose" ? "selected" : ""}>减脂</option><option value="gain" ${profile.goal === "gain" ? "selected" : ""}>增肌</option></select></label>
         <button class="button" type="submit">保存设置</button>
       </form>
       <div class="settings-group">
@@ -476,7 +511,8 @@ function renderEntryModal() {
 }
 
 function openEntryModal(foodId = "", entryId = "") {
-  const existing = entryId ? state.entries.find((entry) => entry.id === entryId) : null;
+  const records = activeRecordState(state);
+  const existing = entryId ? records.entries.find((entry) => entry.id === entryId) : null;
   selectedFoodId = foodId || existing?.items?.[0]?.foodId || state.foods[0]?.id || "";
   entryDraft = existing
     ? {
@@ -518,10 +554,12 @@ function openFoodForm(foodId = "") {
         <div class="icon-picker" role="listbox" aria-label="图标">
           ${Object.values(ICON_OPTIONS).flat().map((option) => `<button class="${option === icon ? "active" : ""}" type="button" data-action="select-food-icon" data-icon="${escapeAttr(option)}">${escapeHtml(option)}</button>`).join("")}
         </div>
-        <label class="field"><span>每 100g 热量 kcal</span><input name="calories" inputmode="decimal" value="${escapeAttr(nutrition.calories || 0)}"></label>
+        <label class="field"><span>每 100g 热量 kcal</span><input name="calories" inputmode="decimal" value="${escapeAttr(existingFood ? (nutrition.calories ?? "") : "")}"></label>
+        <label class="field"><span>每 100g 热量 kJ</span><input name="kilojoules" inputmode="decimal" value=""></label>
         <label class="field"><span>每 100g 蛋白质 g</span><input name="protein" inputmode="decimal" value="${escapeAttr(nutrition.protein || 0)}"></label>
         <label class="field"><span>每 100g 碳水 g</span><input name="carbs" inputmode="decimal" value="${escapeAttr(nutrition.carbs || 0)}"></label>
         <label class="field"><span>每 100g 脂肪 g</span><input name="fat" inputmode="decimal" value="${escapeAttr(nutrition.fat || 0)}"></label>
+        <label class="field"><span>每 100g 膳食纤维 g</span><input name="fiber" inputmode="decimal" value="${escapeAttr(nutrition.fiber || 0)}"></label>
         <label class="field"><span>每 100g 钠 mg</span><input name="sodium" inputmode="decimal" value="${escapeAttr(nutrition.sodium || 0)}"></label>
         ${existingFood?.image ? `<div class="photo-preview"><span class="entry-thumb"><img alt="" src="${escapeAttr(existingFood.image)}"></span><span class="hint">已保存图片</span></div>` : ""}
         <label class="field"><span>图片</span><input name="image" type="file" accept="image/*"></label>
@@ -593,29 +631,35 @@ async function handleEntrySubmit(form) {
   const timestamp = entryDraft.timestamp || new Date().toISOString();
   const waterItems = entryDraft.items.filter((item) => isWaterFood(findFood(state, item.foodId)));
   const foodItems = entryDraft.items.filter((item) => !isWaterFood(findFood(state, item.foodId)));
-  for (const item of waterItems) {
-    state.waterEntries.push({
-      id: createId("water"),
+  state = updateActiveProfile(state, (profile) => {
+    const waterEntries = [...profile.waterEntries];
+    for (const item of waterItems) {
+      waterEntries.push({
+        id: createId("water"),
+        timestamp,
+        milliliters: positiveFiniteNumber(item.amount, positiveFiniteNumber(item.grams, 0))
+      });
+    }
+
+    const entry = {
+      id: entryDraft.entryId || createId("entry"),
       timestamp,
-      milliliters: positiveFiniteNumber(item.amount, positiveFiniteNumber(item.grams, 0))
-    });
-  }
+      items: cloneEntryItems(foodItems),
+      note: entryDraft.note,
+      photo
+    };
+    let entries = [...profile.entries];
 
-  const entry = {
-    id: entryDraft.entryId || createId("entry"),
-    timestamp,
-    items: cloneEntryItems(foodItems),
-    note: entryDraft.note,
-    photo
-  };
+    if (entryDraft.entryId && foodItems.length) {
+      entries = entries.map((existing) => existing.id === entryDraft.entryId ? entry : existing);
+    } else if (entryDraft.entryId) {
+      entries = entries.filter((existing) => existing.id !== entryDraft.entryId);
+    } else if (foodItems.length) {
+      entries.push(entry);
+    }
 
-  if (entryDraft.entryId && foodItems.length) {
-    state.entries = state.entries.map((existing) => existing.id === entryDraft.entryId ? entry : existing);
-  } else if (entryDraft.entryId) {
-    state.entries = state.entries.filter((existing) => existing.id !== entryDraft.entryId);
-  } else if (foodItems.length) {
-    state.entries.push(entry);
-  }
+    return { ...profile, entries, waterEntries };
+  });
 
   closeModal();
   currentView = "today";
@@ -639,11 +683,12 @@ async function handleFoodSubmit(form) {
     icon: defaultIconForCategory(category, icon || existingFood?.icon),
     image: image.dataUrl || existingFood?.image || "",
     nutritionPer100g: {
-      calories: nonNegativeFiniteNumber(data.get("calories"), 0),
+      calories: caloriesFromEnergyInputs(data.get("calories"), data.get("kilojoules")),
       protein: nonNegativeFiniteNumber(data.get("protein"), 0),
       carbs: nonNegativeFiniteNumber(data.get("carbs"), 0),
       fat: nonNegativeFiniteNumber(data.get("fat"), 0),
-      sodium: nonNegativeFiniteNumber(data.get("sodium"), 0)
+      sodium: nonNegativeFiniteNumber(data.get("sodium"), 0),
+      fiber: nonNegativeFiniteNumber(data.get("fiber"), 0)
     },
     quickAdd: existingFood?.quickAdd === false ? false : true
   };
@@ -682,7 +727,8 @@ function downloadText(filename, content, type) {
 
 function exportRange(days, format) {
   const safeDays = Number(days) === 30 ? 30 : 7;
-  const rows = exportLogRows(state, dateKey(), safeDays);
+  const records = activeRecordState(state);
+  const rows = exportLogRows(records, dateKey(), safeDays);
   const safeFormat = format === "json" ? "json" : "csv";
   const filename = `chileme-${safeDays}d-${dateKey()}.${safeFormat}`;
   if (safeFormat === "json") {
@@ -810,12 +856,49 @@ document.addEventListener("click", (event) => {
     renderEntryModal();
   }
   if (action === "delete-entry") {
-    state.entries = state.entries.filter((entry) => entry.id !== target.dataset.entryId);
+    state = updateActiveProfile(state, (profile) => ({
+      ...profile,
+      entries: profile.entries.filter((entry) => entry.id !== target.dataset.entryId)
+    }));
     saveAndRender();
   }
   if (action === "delete-water") {
-    state.waterEntries = state.waterEntries.filter((entry) => entry.id !== target.dataset.waterId);
+    state = updateActiveProfile(state, (profile) => ({
+      ...profile,
+      waterEntries: profile.waterEntries.filter((entry) => entry.id !== target.dataset.waterId)
+    }));
     saveAndRender();
+  }
+  if (action === "add-profile") {
+    const name = prompt("新档案名称", "新档案");
+    if (name !== null) {
+      try {
+        state = addLocalProfile(state, name);
+        saveAndRender();
+      } catch (error) {
+        alert(error.message || "档案添加失败");
+      }
+    }
+  }
+  if (action === "rename-profile") {
+    const activeProfile = getActiveProfile(state);
+    const name = prompt("新的档案名称", activeProfile.name);
+    if (name !== null) {
+      try {
+        state = renameLocalProfile(state, activeProfile.id, name);
+        saveAndRender();
+      } catch (error) {
+        alert(error.message || "档案更新失败");
+      }
+    }
+  }
+  if (action === "delete-profile" && confirm("删除当前档案？该档案的记录也会删除。")) {
+    try {
+      state = deleteLocalProfile(state, state.activeProfileId);
+      saveAndRender();
+    } catch (error) {
+      alert(error.message || "档案删除失败");
+    }
   }
   if (action === "export") exportJson();
   if (action === "import") importJson();
@@ -835,6 +918,18 @@ document.addEventListener("input", (event) => {
 });
 
 document.addEventListener("change", (event) => {
+  const activeProfileSelect = event.target.closest('select[data-action="set-active-profile"]');
+  if (activeProfileSelect) {
+    try {
+      state = setActiveProfile(state, activeProfileSelect.value);
+      saveAndRender();
+    } catch (error) {
+      alert(error.message || "档案切换失败");
+      render();
+    }
+    return;
+  }
+
   const select = event.target.closest('form[data-action="save-food"] select[name="category"]');
   if (!select) return;
   const form = select.closest("form");
@@ -865,19 +960,24 @@ document.addEventListener("submit", async (event) => {
   }
   if (action === "save-settings") {
     const data = new FormData(form);
-    state.dailyGoal = {
-      calories: goalInputValue(data.get("calories")),
-      protein: goalInputValue(data.get("protein")),
-      waterMl: goalInputValue(data.get("waterMl"))
-    };
-    state.profile = {
-      sex: data.get("sex") === "male" ? "male" : "female",
-      age: positiveFiniteNumber(data.get("age"), state.profile.age),
-      heightCm: positiveFiniteNumber(data.get("heightCm"), state.profile.heightCm),
-      weightKg: positiveFiniteNumber(data.get("weightKg"), state.profile.weightKg),
-      activityLevel: String(data.get("activityLevel") || state.profile.activityLevel),
-      goal: String(data.get("goal") || state.profile.goal)
-    };
+    const activeProfile = getActiveProfile(state);
+    state = updateActiveProfile(state, (profile) => ({
+      ...profile,
+      dailyGoal: {
+        calories: goalInputValue(data.get("calories")),
+        protein: goalInputValue(data.get("protein")),
+        fiber: goalInputValue(data.get("fiber")),
+        waterMl: goalInputValue(data.get("waterMl"))
+      },
+      profile: {
+        sex: data.get("sex") === "male" ? "male" : "female",
+        age: positiveFiniteNumber(data.get("age"), activeProfile.profile.age),
+        heightCm: positiveFiniteNumber(data.get("heightCm"), activeProfile.profile.heightCm),
+        weightKg: positiveFiniteNumber(data.get("weightKg"), activeProfile.profile.weightKg),
+        activityLevel: String(data.get("activityLevel") || activeProfile.profile.activityLevel),
+        goal: String(data.get("goal") || activeProfile.profile.goal)
+      }
+    }));
     saveAndRender();
     alert("设置已保存");
   }

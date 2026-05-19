@@ -124,6 +124,60 @@ test("format energy inputs prefer explicit nonnegative kcal before kilojoules", 
   assert.equal(caloriesFromEnergyInputs("", 418.4), 100);
 });
 
+test("food form supports kilojoules and fiber nutrition fields", () => {
+  const app = readText("../src/app.js");
+  const formBlock = app.match(/function openFoodForm\([\s\S]*?function openCategoryManager/)?.[0] || "";
+  const submitBlock = app.match(/async function handleFoodSubmit\(form\) \{[\s\S]*?function exportJson/)?.[0] || "";
+
+  assert.ok(formBlock);
+  assert.match(formBlock, /name="kilojoules"/);
+  assert.match(formBlock, /name="fiber"/);
+  assert.match(formBlock, /name="calories"[\s\S]*value="\$\{escapeAttr\(existingFood \? \(nutrition\.calories \?\? ""\) : ""\)\}"/);
+  assert.doesNotMatch(formBlock, /name="calories"[\s\S]*nutrition\.calories\s*\|\|\s*0/);
+  assert.doesNotMatch(formBlock, /name="calories"[\s\S]*nutrition\.calories\s*\?\?\s*0/);
+  assert.ok(submitBlock);
+  assert.match(submitBlock, /caloriesFromEnergyInputs\(data\.get\("calories"\), data\.get\("kilojoules"\)\)/);
+  assert.match(submitBlock, /nutritionPer100g:\s*\{[\s\S]*fiber:\s*nonNegativeFiniteNumber\(data\.get\("fiber"\), 0\)/);
+});
+
+test("settings source renders local profile controls and fiber target", () => {
+  const app = readText("../src/app.js");
+  const settingsBlock = app.match(/function renderSettings\([\s\S]*?function render\(\)/)?.[0] || "";
+
+  assert.ok(settingsBlock);
+  assert.match(settingsBlock, /当前档案/);
+  assert.match(settingsBlock, /name="activeProfileId"/);
+  assert.match(settingsBlock, /data-action="set-active-profile"/);
+  assert.match(settingsBlock, /data-action="add-profile"/);
+  assert.match(settingsBlock, /data-action="rename-profile"/);
+  assert.match(settingsBlock, /data-action="delete-profile"/);
+  assert.match(settingsBlock, /name="fiber"/);
+  assert.match(settingsBlock, /getActiveProfile\(state\)/);
+});
+
+test("today source renders active profile banner from active record state", () => {
+  const app = readText("../src/app.js");
+  const todayBlock = app.match(/function renderToday\(\) \{[\s\S]*?function renderFoodRows/)?.[0] || "";
+
+  assert.ok(todayBlock);
+  assert.match(todayBlock, /activeRecordState\(state\)/);
+  assert.match(todayBlock, /getActiveProfile\(state\)/);
+  assert.match(todayBlock, /profile-name/);
+});
+
+test("runtime render helpers project current profile records", () => {
+  const app = readText("../src/app.js");
+  const summaryBlock = app.match(/function renderSummary\([\s\S]*?function statusLabel/)?.[0] || "";
+  const structureBlock = app.match(/function renderStructure\([\s\S]*?function renderQuickAdd/)?.[0] || "";
+  const timelineBlock = app.match(/function renderTimeline\([\s\S]*?function renderToday/)?.[0] || "";
+  const statsBlock = app.match(/function renderStats\([\s\S]*?function trendLabel/)?.[0] || "";
+  const exportBlock = app.match(/function exportRange\([\s\S]*?function importJson/)?.[0] || "";
+
+  for (const block of [summaryBlock, structureBlock, timelineBlock, statsBlock, exportBlock]) {
+    assert.match(block, /activeRecordState\(state\)/);
+  }
+});
+
 test("app source does not expose temporary AI recognition UI or calls", () => {
   const app = readText("../src/app.js");
 
@@ -225,9 +279,11 @@ test("water can be recorded as a water entry from the food flow", () => {
   const submitBlock = app.match(/async function handleEntrySubmit\(form\) \{[\s\S]*?async function handleFoodSubmit/)?.[0] || "";
 
   assert.match(app, /function isWaterFood\(food\)/);
-  assert.match(submitBlock, /state\.waterEntries\.push/);
+  assert.match(submitBlock, /updateActiveProfile\(state/);
+  assert.match(submitBlock, /waterEntries = \[\.\.\.profile\.waterEntries\]/);
+  assert.match(submitBlock, /waterEntries\.push/);
   assert.match(submitBlock, /createId\("water"\)/);
-  assert.match(timelineBlock, /state\.waterEntries/);
+  assert.match(timelineBlock, /records\.waterEntries/);
   assert.match(timelineBlock, /data-action="delete-water"/);
 });
 
