@@ -9,6 +9,13 @@ const APP_SHELL = [
   "./src/app.js",
   "./src/domain.js",
   "./src/store.js",
+  "./src/ui/format.js",
+  "./src/ui/image.js",
+  "./src/recognition.js",
+  "./src/views/today.js",
+  "./src/views/foods.js",
+  "./src/views/stats.js",
+  "./src/views/settings.js",
   "./src/styles.css"
 ];
 

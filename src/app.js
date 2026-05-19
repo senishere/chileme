@@ -18,14 +18,19 @@ import {
   trendStats
 } from "./domain.js";
 import {
-  MAX_STORED_DATA_URL_BYTES,
   createStore,
   exportState,
   importState
 } from "./store.js";
-
-const IMAGE_MAX_DIMENSION = 1200;
-const IMAGE_QUALITY = 0.72;
+import {
+  amountLabel,
+  escapeAttr,
+  escapeHtml,
+  formatNumber,
+  formatTime,
+  itemAmountLabel
+} from "./ui/format.js";
+import { readImage } from "./ui/image.js";
 
 const store = createStore();
 let state = store.load();
@@ -50,19 +55,6 @@ function registerServiceWorker() {
   });
 }
 
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
-function escapeAttr(value) {
-  return escapeHtml(value);
-}
-
 function saveAndRender() {
   try {
     const result = store.save(state);
@@ -76,39 +68,12 @@ function saveAndRender() {
   }
 }
 
-function formatNumber(value, digits = 0) {
-  return Number(value || 0).toLocaleString("zh-CN", {
-    maximumFractionDigits: digits
-  });
-}
-
-function formatTime(timestamp) {
-  return new Intl.DateTimeFormat("zh-CN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false
-  }).format(new Date(timestamp));
-}
-
 function foodLabel(food) {
   return food?.name || "未知食物";
 }
 
 function isWaterFood(food) {
   return food?.id === "food_water" || food?.category === "水";
-}
-
-function amountLabel(amount, unit = "g", digits = 1) {
-  const safeUnit = unit === "ml" ? "ml" : "g";
-  const safeDigits = safeUnit === "ml" ? 0 : digits;
-  return `${formatNumber(amount, safeDigits)}${safeUnit}`;
-}
-
-function itemAmountLabel(item) {
-  return amountLabel(
-    positiveFiniteNumber(item?.amount, positiveFiniteNumber(item?.grams, 0)),
-    item?.unit
-  );
 }
 
 function thumbHtml(food, photo = "") {
@@ -597,73 +562,6 @@ function openCategoryManager() {
       </div>
     </section>
   `;
-}
-
-function dataUrlTooLarge(dataUrl) {
-  return String(dataUrl || "").length > MAX_STORED_DATA_URL_BYTES;
-}
-
-function loadImageElement(file) {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const image = new Image();
-    image.onload = () => {
-      URL.revokeObjectURL(url);
-      resolve(image);
-    };
-    image.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("无法读取图片"));
-    };
-    image.src = url;
-  });
-}
-
-async function compressImage(file) {
-  const image = await loadImageElement(file);
-  const ratio = Math.min(
-    1,
-    IMAGE_MAX_DIMENSION / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height)
-  );
-  const width = Math.max(1, Math.round((image.naturalWidth || image.width) * ratio));
-  const height = Math.max(1, Math.round((image.naturalHeight || image.height) * ratio));
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext("2d");
-  context.drawImage(image, 0, 0, width, height);
-
-  const webp = canvas.toDataURL("image/webp", IMAGE_QUALITY);
-  if (webp.startsWith("data:image/webp")) return webp;
-  return canvas.toDataURL("image/jpeg", IMAGE_QUALITY);
-}
-
-function readRawImage(file) {
-  return new Promise((resolve) => {
-    if (!file) {
-      resolve("");
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => resolve("");
-    reader.readAsDataURL(file);
-  });
-}
-
-async function readImage(file) {
-  if (!file) return { dataUrl: "", dropped: false };
-  let dataUrl = "";
-  try {
-    dataUrl = await compressImage(file);
-  } catch (error) {
-    dataUrl = await readRawImage(file);
-  }
-
-  if (!dataUrl || dataUrlTooLarge(dataUrl)) {
-    return { dataUrl: "", dropped: Boolean(dataUrl) };
-  }
-  return { dataUrl, dropped: false };
 }
 
 function goalInputValue(value) {

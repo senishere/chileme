@@ -27,6 +27,13 @@ test("service worker precaches the app shell for offline startup", () => {
     "./src/app.js",
     "./src/domain.js",
     "./src/store.js",
+    "./src/ui/format.js",
+    "./src/ui/image.js",
+    "./src/recognition.js",
+    "./src/views/today.js",
+    "./src/views/foods.js",
+    "./src/views/stats.js",
+    "./src/views/settings.js",
     "./src/styles.css"
   ]) {
     assert.match(sw, new RegExp(asset.replaceAll(".", "\\.")));
@@ -62,6 +69,67 @@ test("README explains HTTPS deployment for iPhone offline use", () => {
   assert.match(readme, /service worker/);
   assert.match(readme, /GitHub Pages|Cloudflare Pages|Netlify|Vercel/);
   assert.match(readme, /首次联网打开/);
+});
+
+test("recognition interface scaffold exposes unconfigured label and photo contracts", () => {
+  const recognition = readText("../src/recognition.js");
+
+  assert.match(recognition, /RecognitionNotConfiguredError/);
+  assert.match(recognition, /recognizeNutritionLabel/);
+  assert.match(recognition, /recognizeFoodPhoto/);
+  assert.match(recognition, /source:\s*"nutrition_label"/);
+  assert.match(recognition, /source:\s*"food_photo"/);
+});
+
+test("recognition draft helpers expose Task 3 result shapes", async () => {
+  const {
+    nutritionLabelResultDraft,
+    foodPhotoResultDraft
+  } = await import("../src/recognition.js");
+
+  assert.deepEqual(nutritionLabelResultDraft({
+    foodName: "燕麦",
+    notes: ["per package adjusted"],
+    confidence: 0.82
+  }), {
+    source: "nutrition_label",
+    foodName: "燕麦",
+    basis: "per100g",
+    nutritionPer100g: {
+      calories: 0,
+      protein: 0,
+      carbs: 0,
+      fat: 0,
+      sodium: 0,
+      fiber: 0
+    },
+    notes: ["per package adjusted"],
+    confidence: 0.82
+  });
+  assert.equal(nutritionLabelResultDraft({ confidence: "high" }).confidence, 0);
+  assert.deepEqual(foodPhotoResultDraft({ candidates: [{ foodName: "米饭" }] }), {
+    source: "food_photo",
+    candidates: [{ foodName: "米饭" }]
+  });
+  assert.deepEqual(foodPhotoResultDraft({ candidates: "米饭" }), {
+    source: "food_photo",
+    candidates: []
+  });
+});
+
+test("format energy inputs prefer explicit nonnegative kcal before kilojoules", async () => {
+  const { caloriesFromEnergyInputs } = await import("../src/ui/format.js");
+
+  assert.equal(caloriesFromEnergyInputs(0, 418.4), 0);
+  assert.equal(caloriesFromEnergyInputs("", 418.4), 100);
+});
+
+test("app source does not expose temporary AI recognition UI or calls", () => {
+  const app = readText("../src/app.js");
+
+  assert.doesNotMatch(app, /拍照识别/);
+  assert.doesNotMatch(app, /recognizeNutritionLabel/);
+  assert.doesNotMatch(app, /recognizeFoodPhoto/);
 });
 
 test("bottom navigation uses simplified food label", () => {
@@ -119,7 +187,7 @@ test("domain no longer exports temporary portion compatibility helpers", () => {
 
 test("category manager supports selecting default category icons", () => {
   const app = readText("../src/app.js");
-  const categoryManagerBlock = app.match(/function openCategoryManager\(\) \{[\s\S]*?function dataUrlTooLarge/)?.[0] || "";
+  const categoryManagerBlock = app.match(/function openCategoryManager\(\) \{[\s\S]*?function goalInputValue/)?.[0] || "";
 
   assert.ok(categoryManagerBlock);
   assert.match(categoryManagerBlock, /name="icon"/);
