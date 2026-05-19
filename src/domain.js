@@ -3,8 +3,11 @@ export const EMPTY_NUTRITION = Object.freeze({
   protein: 0,
   carbs: 0,
   fat: 0,
-  sodium: 0
+  sodium: 0,
+  fiber: 0
 });
+
+export const DEFAULT_PROFILE_ID = "profile_default";
 
 export function roundMetric(value) {
   return Math.round((Number(value) || 0) * 100) / 100;
@@ -18,6 +21,10 @@ export function positiveFiniteNumber(value, fallback = 0) {
 export function nonNegativeFiniteNumber(value, fallback = 0) {
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? number : fallback;
+}
+
+export function kilojoulesToCalories(value) {
+  return roundMetric(nonNegativeFiniteNumber(value, 0) / 4.184);
 }
 
 export function amountToGrams(amount, unit = "g") {
@@ -36,7 +43,8 @@ export function calculateItemNutrition(food, amount, unit = "g") {
     protein: roundMetric((nutrition.protein || 0) * ratio),
     carbs: roundMetric((nutrition.carbs || 0) * ratio),
     fat: roundMetric((nutrition.fat || 0) * ratio),
-    sodium: roundMetric((nutrition.sodium || 0) * ratio)
+    sodium: roundMetric((nutrition.sodium || 0) * ratio),
+    fiber: roundMetric((nutrition.fiber || 0) * ratio)
   };
 }
 
@@ -149,43 +157,219 @@ const DEFAULT_FOODS = [
   food("food_fried_rice", "炒饭", "餐食", "🍛", { calories: 188, protein: 5, carbs: 28, fat: 6, sodium: 420 })
 ];
 
+const DEFAULT_PERSONAL_PROFILE = Object.freeze({
+  sex: "female",
+  age: 30,
+  heightCm: 165,
+  weightKg: 60,
+  activityLevel: "light",
+  goal: "maintain"
+});
+
+const DEFAULT_DAILY_GOAL = Object.freeze({
+  calories: 2000,
+  protein: 100,
+  waterMl: 2000,
+  fiber: 25
+});
+
+function cloneNutrition(nutrition = EMPTY_NUTRITION) {
+  return { ...EMPTY_NUTRITION, ...nutrition };
+}
+
+function cloneEntry(entry) {
+  return {
+    ...entry,
+    items: (entry.items || []).map((item) => ({
+      ...item,
+      nutrition: cloneNutrition(item.nutrition)
+    }))
+  };
+}
+
+function cloneLocalProfile(profile) {
+  return {
+    id: profile.id || createId("profile"),
+    name: normalizeProfileName(profile.name || "新档案") || "新档案",
+    profile: { ...DEFAULT_PERSONAL_PROFILE, ...(profile.profile || {}) },
+    dailyGoal: { ...DEFAULT_DAILY_GOAL, ...(profile.dailyGoal || {}) },
+    entries: (profile.entries || []).map(cloneEntry),
+    waterEntries: (profile.waterEntries || []).map((entry) => ({ ...entry }))
+  };
+}
+
+export function createLocalProfile(overrides = {}) {
+  return cloneLocalProfile(overrides);
+}
+
 export function createDefaultState() {
   return {
+    activeProfileId: DEFAULT_PROFILE_ID,
+    profiles: [
+      createLocalProfile({ id: DEFAULT_PROFILE_ID, name: "日常维持" })
+    ],
     categories: DEFAULT_CATEGORIES.map((item) => ({ ...item })),
-    foods: DEFAULT_FOODS.map((item) => ({ ...item, nutritionPer100g: { ...item.nutritionPer100g } })),
-    entries: [],
-    waterEntries: [],
-    profile: {
-      sex: "female",
-      age: 30,
-      heightCm: 165,
-      weightKg: 60,
-      activityLevel: "light",
-      goal: "maintain"
-    },
-    dailyGoal: { calories: 2000, protein: 100, waterMl: 2000 }
+    foods: DEFAULT_FOODS.map((item) => ({ ...item, nutritionPer100g: cloneNutrition(item.nutritionPer100g) }))
   };
 }
 
 export function cloneState(state) {
   const source = state || {};
+  const profiles = Array.isArray(source.profiles) && source.profiles.length > 0
+    ? source.profiles.map(cloneLocalProfile)
+    : [
+        createLocalProfile({
+          id: source.activeProfileId || DEFAULT_PROFILE_ID,
+          name: source.name || "日常维持",
+          profile: source.profile,
+          dailyGoal: source.dailyGoal,
+          entries: source.entries,
+          waterEntries: source.waterEntries
+        })
+      ];
+  const activeProfileId = source.activeProfileId && profiles.some((profile) => profile.id === source.activeProfileId)
+    ? source.activeProfileId
+    : profiles[0].id;
+  const activeProfile = profiles.find((profile) => profile.id === activeProfileId);
+  if (activeProfile && (
+    source.profile ||
+    source.dailyGoal ||
+    Array.isArray(source.entries) ||
+    Array.isArray(source.waterEntries)
+  )) {
+    const projected = cloneLocalProfile({
+      ...activeProfile,
+      profile: source.profile || activeProfile.profile,
+      dailyGoal: source.dailyGoal || activeProfile.dailyGoal,
+      entries: Array.isArray(source.entries) ? source.entries : activeProfile.entries,
+      waterEntries: Array.isArray(source.waterEntries) ? source.waterEntries : activeProfile.waterEntries
+    });
+    Object.assign(activeProfile, projected);
+  }
+
   return {
+    activeProfileId,
+    profiles,
     categories: (source.categories || []).map((category) => ({ ...category })),
     foods: (source.foods || []).map((item) => ({
       ...item,
-      nutritionPer100g: { ...(item.nutritionPer100g || item.nutrition || EMPTY_NUTRITION) }
-    })),
-    entries: (source.entries || []).map((entry) => ({
-      ...entry,
-      items: (entry.items || []).map((item) => ({
-        ...item,
-        nutrition: { ...(item.nutrition || EMPTY_NUTRITION) }
-      }))
-    })),
-    waterEntries: (source.waterEntries || []).map((entry) => ({ ...entry })),
-    profile: { ...(source.profile || {}) },
-    dailyGoal: { ...(source.dailyGoal || {}) }
+      nutritionPer100g: cloneNutrition(item.nutritionPer100g || item.nutrition)
+    }))
   };
+}
+
+function normalizeProfileName(name) {
+  return String(name || "").trim();
+}
+
+function assertProfileName(name) {
+  const profileName = normalizeProfileName(name);
+  if (!profileName) throw new Error("档案名称不能为空");
+  return profileName;
+}
+
+export function getActiveProfile(state) {
+  const source = state || {};
+  const profiles = source.profiles || [];
+  return profiles.find((profile) => profile.id === source.activeProfileId) || profiles[0] || createLocalProfile({
+    id: DEFAULT_PROFILE_ID,
+    name: "日常维持",
+    profile: source.profile,
+    dailyGoal: source.dailyGoal,
+    entries: source.entries,
+    waterEntries: source.waterEntries
+  });
+}
+
+export function activeRecordState(state) {
+  const activeProfile = getActiveProfile(state);
+  return {
+    ...(state || {}),
+    profile: activeProfile.profile,
+    dailyGoal: activeProfile.dailyGoal,
+    entries: activeProfile.entries,
+    waterEntries: activeProfile.waterEntries,
+    categories: state?.categories || [],
+    foods: state?.foods || []
+  };
+}
+
+function hasProjectedRecords(state) {
+  return Array.isArray(state?.entries) || Array.isArray(state?.waterEntries);
+}
+
+function assertUniqueProfileName(state, name, existingId = "") {
+  const profileName = assertProfileName(name);
+  const duplicate = (state.profiles || []).some((profile) => (
+    profile.name === profileName && profile.id !== existingId
+  ));
+  if (duplicate) throw new Error("档案已存在");
+  return profileName;
+}
+
+function assertUniqueProfileId(state, profileId, existingId = "") {
+  const id = String(profileId || "").trim();
+  if (!id) throw new Error("档案 ID 不能为空");
+  const duplicate = (state.profiles || []).some((profile) => (
+    profile.id === id && profile.id !== existingId
+  ));
+  if (duplicate) throw new Error("档案 ID 已存在");
+  return id;
+}
+
+export function setActiveProfile(state, profileId) {
+  const next = cloneState(state);
+  if (!next.profiles.some((profile) => profile.id === profileId)) {
+    throw new Error("档案不存在");
+  }
+  next.activeProfileId = profileId;
+  return next;
+}
+
+export function addLocalProfile(state, name) {
+  const next = cloneState(state);
+  const profileName = assertUniqueProfileName(next, name);
+  const profile = createLocalProfile({ name: profileName });
+  next.profiles.push(profile);
+  next.activeProfileId = profile.id;
+  return next;
+}
+
+export function renameLocalProfile(state, profileId, name) {
+  const next = cloneState(state);
+  const profile = next.profiles.find((item) => item.id === profileId);
+  if (!profile) throw new Error("档案不存在");
+  profile.name = assertUniqueProfileName(next, name, profileId);
+  return next;
+}
+
+export function deleteLocalProfile(state, profileId) {
+  const next = cloneState(state);
+  if (next.profiles.length <= 1) throw new Error("至少保留一个档案");
+  if (!next.profiles.some((profile) => profile.id === profileId)) {
+    throw new Error("档案不存在");
+  }
+  next.profiles = next.profiles.filter((profile) => profile.id !== profileId);
+  if (next.activeProfileId === profileId) {
+    next.activeProfileId = next.profiles[0].id;
+  }
+  return next;
+}
+
+export function updateActiveProfile(state, updater) {
+  const next = cloneState(state);
+  const index = next.profiles.findIndex((profile) => profile.id === next.activeProfileId);
+  if (index < 0) throw new Error("档案不存在");
+  const updated = typeof updater === "function" ? updater(cloneLocalProfile(next.profiles[index])) : updater;
+  const currentId = next.profiles[index].id;
+  const hasUpdatedId = updated && typeof updated === "object" && Object.hasOwn(updated, "id");
+  const updatedId = hasUpdatedId ? assertUniqueProfileId(next, updated.id, currentId) : currentId;
+  const candidate = cloneLocalProfile({ ...next.profiles[index], ...updated });
+  candidate.id = updatedId;
+  candidate.name = assertUniqueProfileName(next, candidate.name, currentId);
+  next.profiles[index] = candidate;
+  next.activeProfileId = next.profiles[index].id;
+  return next;
 }
 
 function normalizeCategoryName(name) {
@@ -266,18 +450,20 @@ export function addNutrition(left, right) {
     protein: roundMetric((left.protein || 0) + (right.protein || 0)),
     carbs: roundMetric((left.carbs || 0) + (right.carbs || 0)),
     fat: roundMetric((left.fat || 0) + (right.fat || 0)),
-    sodium: roundMetric((left.sodium || 0) + (right.sodium || 0))
+    sodium: roundMetric((left.sodium || 0) + (right.sodium || 0)),
+    fiber: roundMetric((left.fiber || 0) + (right.fiber || 0))
   };
 }
 
 export function summarizeDay(state, dayKey) {
+  const records = hasProjectedRecords(state) ? state : activeRecordState(state);
   const summary = {
     ...EMPTY_NUTRITION,
     waterMl: 0,
     entryCount: 0
   };
 
-  for (const entry of state.entries || []) {
+  for (const entry of records.entries || []) {
     if (dateKey(entry.timestamp) !== dayKey) continue;
     summary.entryCount += 1;
     for (const item of entry.items || []) {
@@ -287,10 +473,11 @@ export function summarizeDay(state, dayKey) {
       summary.carbs = next.carbs;
       summary.fat = next.fat;
       summary.sodium = next.sodium;
+      summary.fiber = next.fiber;
     }
   }
 
-  for (const water of state.waterEntries || []) {
+  for (const water of records.waterEntries || []) {
     if (dateKey(water.timestamp) === dayKey) {
       summary.waterMl += Number(water.milliliters) || 0;
     }
@@ -345,6 +532,7 @@ export function estimateDailyTargets(profile = {}, dailyGoal = {}) {
   const fatCalories = fat * 9;
   const carbs = Math.max(0, Math.round((calories - proteinCalories - fatCalories) / 4));
   const waterMl = positiveFiniteNumber(dailyGoal.waterMl, Math.round(weightKg * 35));
+  const fiber = positiveFiniteNumber(dailyGoal.fiber, 25);
 
   return {
     calories,
@@ -352,7 +540,8 @@ export function estimateDailyTargets(profile = {}, dailyGoal = {}) {
     carbs,
     fat,
     sodium: 2000,
-    waterMl
+    waterMl,
+    fiber
   };
 }
 
@@ -373,13 +562,15 @@ export function limitStatus(ratio) {
 }
 
 export function dailyStructure(state, dayKey = dateKey()) {
-  const summary = summarizeDay(state, dayKey);
-  const targets = estimateDailyTargets(state.profile, state.dailyGoal);
+  const records = hasProjectedRecords(state) ? state : activeRecordState(state);
+  const summary = summarizeDay(records, dayKey);
+  const targets = estimateDailyTargets(records.profile, records.dailyGoal);
   const metrics = {
     calories: { label: "热量", unit: "kcal", value: summary.calories, target: targets.calories },
     protein: { label: "蛋白质", unit: "g", value: summary.protein, target: targets.protein },
     carbs: { label: "碳水", unit: "g", value: summary.carbs, target: targets.carbs },
     fat: { label: "脂肪", unit: "g", value: summary.fat, target: targets.fat },
+    fiber: { label: "膳食纤维", unit: "g", value: summary.fiber, target: targets.fiber },
     waterMl: { label: "饮水", unit: "ml", value: summary.waterMl, target: targets.waterMl }
   };
 
@@ -427,6 +618,7 @@ export function filterFoods(foods, options = {}) {
 }
 
 export function exportLogRows(state, endDayKey = dateKey(), days = 7) {
+  const records = hasProjectedRecords(state) ? state : activeRecordState(state);
   const end = new Date(`${endDayKey}T00:00:00`);
   const start = new Date(end);
   start.setDate(start.getDate() - Math.max(1, Number(days) || 1) + 1);
@@ -437,10 +629,10 @@ export function exportLogRows(state, endDayKey = dateKey(), days = 7) {
     return key >= startKey && key <= endKey;
   };
 
-  const foodRows = (state.entries || []).flatMap((entry) => {
+  const foodRows = (records.entries || []).flatMap((entry) => {
     if (!inRange(entry.timestamp)) return [];
     return (entry.items || []).map((item) => {
-      const foodItem = findFood(state, item.foodId);
+      const foodItem = findFood(records, item.foodId);
       return {
         date: dateKey(entry.timestamp),
         timestamp: entry.timestamp,
@@ -453,13 +645,14 @@ export function exportLogRows(state, endDayKey = dateKey(), days = 7) {
         carbs: nonNegativeFiniteNumber(item.nutrition?.carbs, 0),
         fat: nonNegativeFiniteNumber(item.nutrition?.fat, 0),
         sodium: nonNegativeFiniteNumber(item.nutrition?.sodium, 0),
+        fiber: nonNegativeFiniteNumber(item.nutrition?.fiber, 0),
         waterMl: 0,
         note: entry.note || ""
       };
     });
   });
 
-  const waterRows = (state.waterEntries || [])
+  const waterRows = (records.waterEntries || [])
     .filter((entry) => inRange(entry.timestamp))
     .map((entry) => ({
       date: dateKey(entry.timestamp),
@@ -473,6 +666,7 @@ export function exportLogRows(state, endDayKey = dateKey(), days = 7) {
       carbs: 0,
       fat: 0,
       sodium: 0,
+      fiber: 0,
       waterMl: nonNegativeFiniteNumber(entry.milliliters, 0),
       note: ""
     }));
@@ -494,6 +688,7 @@ export function exportRowsAsCsv(rows) {
     "carbs",
     "fat",
     "sodium",
+    "fiber",
     "waterMl",
     "note"
   ];

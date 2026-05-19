@@ -2,27 +2,43 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   addCategory,
+  addLocalProfile,
+  activeRecordState,
   buildEntryItem,
   calculateItemNutrition,
   cloneState,
   createDefaultState,
+  createLocalProfile,
   dateKey,
   defaultIconForCategory,
   deleteCategory,
+  deleteLocalProfile,
   dailyStructure,
   estimateDailyTargets,
   exportLogRows,
   exportRowsAsCsv,
   filterFoods,
   findFood,
+  getActiveProfile,
+  kilojoulesToCalories,
   limitStatus,
   listFoodCategories,
   nutritionStatus,
   renameCategory,
+  renameLocalProfile,
+  setActiveProfile,
   summarizeDay,
   sevenDayStats,
-  trendStats
+  trendStats,
+  updateActiveProfile
 } from "../src/domain.js";
+
+test("converts kilojoules to calories for nutrition label entry", () => {
+  assert.equal(kilojoulesToCalories(418.4), 100);
+  assert.equal(kilojoulesToCalories("209.2"), 50);
+  assert.equal(kilojoulesToCalories(""), 0);
+  assert.equal(kilojoulesToCalories(-10), 0);
+});
 
 test("calculates per-100g nutrition from grams", () => {
   const food = {
@@ -35,7 +51,8 @@ test("calculates per-100g nutrition from grams", () => {
     protein: 3.9,
     carbs: 38.85,
     fat: 0.45,
-    sodium: 1.5
+    sodium: 1.5,
+    fiber: 0
   });
 });
 
@@ -50,7 +67,60 @@ test("treats ml as grams for rough drink logging", () => {
     protein: 8,
     carbs: 12,
     fat: 8.25,
-    sodium: 105
+    sodium: 105,
+    fiber: 0
+  });
+});
+
+test("calculates dietary fiber with per-100g nutrition", () => {
+  const food = {
+    id: "food_oatmeal",
+    nutritionPer100g: {
+      calories: 389,
+      protein: 16.9,
+      carbs: 66.3,
+      fat: 6.9,
+      sodium: 2,
+      fiber: 10.6
+    }
+  };
+
+  assert.deepEqual(calculateItemNutrition(food, 50, "g"), {
+    calories: 194.5,
+    protein: 8.45,
+    carbs: 33.15,
+    fat: 3.45,
+    sodium: 1,
+    fiber: 5.3
+  });
+});
+
+test("builds entry items with dietary fiber", () => {
+  const food = {
+    id: "food_custom",
+    nutritionPer100g: {
+      calories: 200,
+      protein: 8,
+      carbs: 30,
+      fat: 4,
+      sodium: 100,
+      fiber: 6
+    }
+  };
+
+  assert.deepEqual(buildEntryItem(food, 150, "g"), {
+    foodId: "food_custom",
+    amount: 150,
+    unit: "g",
+    grams: 150,
+    nutrition: {
+      calories: 300,
+      protein: 12,
+      carbs: 45,
+      fat: 6,
+      sodium: 150,
+      fiber: 9
+    }
   });
 });
 
@@ -65,7 +135,7 @@ test("summarizes entries and water for one local day", () => {
         {
           foodId: "food_rice",
           grams: 150,
-          nutrition: { calories: 174, protein: 3.9, carbs: 38.85, fat: 0.45, sodium: 1.5 }
+          nutrition: { calories: 174, protein: 3.9, carbs: 38.85, fat: 0.45, sodium: 1.5, fiber: 0.6 }
         }
       ],
       note: "",
@@ -78,7 +148,7 @@ test("summarizes entries and water for one local day", () => {
         {
           foodId: "food_rice",
           grams: 150,
-          nutrition: { calories: 174, protein: 3.9, carbs: 38.85, fat: 0.45, sodium: 1.5 }
+          nutrition: { calories: 174, protein: 3.9, carbs: 38.85, fat: 0.45, sodium: 1.5, fiber: 0.6 }
         }
       ],
       note: "",
@@ -95,6 +165,7 @@ test("summarizes entries and water for one local day", () => {
     carbs: 38.85,
     fat: 0.45,
     sodium: 1.5,
+    fiber: 0.6,
     waterMl: 300,
     entryCount: 1
   });
@@ -121,7 +192,7 @@ test("builds trend stats ending on the selected date", () => {
         {
           foodId: "food_rice",
           grams: 150,
-          nutrition: { calories: 174, protein: 3.9, carbs: 38.85, fat: 0.45, sodium: 1.5 }
+          nutrition: { calories: 174, protein: 3.9, carbs: 38.85, fat: 0.45, sodium: 1.5, fiber: 0.6 }
         }
       ],
       note: "",
@@ -136,6 +207,7 @@ test("builds trend stats ending on the selected date", () => {
   assert.equal(stats[0].date, "2026-05-12");
   assert.equal(stats[6].date, "2026-05-18");
   assert.equal(stats[6].calories, 174);
+  assert.equal(stats[6].fiber, 0.6);
   assert.equal(month.length, 30);
   assert.equal(month[0].date, "2026-04-19");
   assert.deepEqual(sevenDayStats(state, "2026-05-18"), stats);
@@ -154,7 +226,7 @@ test("builds entry items without portion templates", () => {
     amount: 150,
     unit: "g",
     grams: 150,
-    nutrition: { calories: 174, protein: 3.9, carbs: 38.85, fat: 0.45, sodium: 1.5 }
+    nutrition: { calories: 174, protein: 3.9, carbs: 38.85, fat: 0.45, sodium: 1.5, fiber: 0 }
   });
 });
 
@@ -172,7 +244,8 @@ test("default foods use simplified categories and icon fields", () => {
     protein: 0,
     carbs: 0,
     fat: 0,
-    sodium: 0
+    sodium: 0,
+    fiber: 0
   });
   assert.equal(typeof findFood(state, "food_rice").icon, "string");
   assert.equal(typeof findFood(state, "food_rice").nutritionPer100g.calories, "number");
@@ -206,6 +279,123 @@ test("category helpers add rename delete and move foods to fallback category", (
   assert.throws(() => renameCategory(deleted, "其他", "细粮"), /分类已存在/);
   assert.throws(() => deleteCategory(deleted, "其他"), /不能删除/);
   assert.throws(() => addCategory(deleted, " "), /分类名称/);
+});
+
+test("default state starts with one active local profile", () => {
+  const state = createDefaultState();
+  const profile = getActiveProfile(state);
+
+  assert.equal(state.activeProfileId, "profile_default");
+  assert.equal(state.profiles.length, 1);
+  assert.equal(profile.name, "日常维持");
+  assert.deepEqual(profile.entries, []);
+  assert.deepEqual(profile.waterEntries, []);
+  assert.equal(profile.dailyGoal.fiber, 25);
+});
+
+test("creates local profiles from override objects", () => {
+  const profile = createLocalProfile({
+    id: "profile_custom",
+    name: "自定义",
+    dailyGoal: { fiber: 30 }
+  });
+
+  assert.equal(createLocalProfile().name, "新档案");
+  assert.equal(createLocalProfile({ name: " " }).name, "新档案");
+  assert.equal(profile.id, "profile_custom");
+  assert.equal(profile.name, "自定义");
+  assert.equal(profile.dailyGoal.fiber, 30);
+  assert.deepEqual(profile.entries, []);
+  assert.deepEqual(profile.waterEntries, []);
+});
+
+test("active record state projects current profile records with shared foods", () => {
+  const state = createDefaultState();
+  state.profiles[0].entries = [{
+    id: "entry_a",
+    timestamp: "2026-05-18T12:00:00",
+    items: [{
+      foodId: "food_rice",
+      amount: 150,
+      unit: "g",
+      nutrition: { calories: 174, protein: 3.9, carbs: 38.85, fat: 0.45, sodium: 1.5, fiber: 0.6 }
+    }],
+    note: "",
+    photo: ""
+  }];
+
+  const active = activeRecordState(state);
+
+  assert.equal(active.entries.length, 1);
+  assert.equal(active.foods, state.foods);
+  assert.equal(active.categories, state.categories);
+  assert.equal(active.dailyGoal.fiber, 25);
+  assert.equal(summarizeDay(active, "2026-05-18").fiber, 0.6);
+});
+
+test("local profile helpers add rename switch update and delete profiles", () => {
+  const state = createDefaultState();
+  const added = addLocalProfile(state, "减脂期");
+
+  assert.equal(added.profiles.length, 2);
+  assert.equal(added.profiles[1].name, "减脂期");
+  assert.equal(added.activeProfileId, added.profiles[1].id);
+  assert.deepEqual(added.profiles[1].entries, []);
+  assert.throws(() => addLocalProfile(added, "减脂期"), /档案已存在/);
+
+  const renamed = renameLocalProfile(added, added.activeProfileId, "出差期");
+  assert.equal(getActiveProfile(renamed).name, "出差期");
+  assert.throws(() => renameLocalProfile(renamed, renamed.activeProfileId, "日常维持"), /档案已存在/);
+
+  const updated = updateActiveProfile(renamed, (profile) => ({
+    ...profile,
+    dailyGoal: { ...profile.dailyGoal, fiber: 30 },
+    entries: [{ id: "entry_trip", timestamp: "2026-05-18T12:00:00", items: [], note: "", photo: "" }]
+  }));
+  assert.equal(getActiveProfile(updated).dailyGoal.fiber, 30);
+  assert.equal(activeRecordState(updated).entries[0].id, "entry_trip");
+
+  const changedId = updateActiveProfile(updated, (profile) => ({
+    ...profile,
+    id: "profile_trip"
+  }));
+  assert.equal(changedId.activeProfileId, "profile_trip");
+  assert.equal(getActiveProfile(changedId).id, "profile_trip");
+  assert.throws(() => updateActiveProfile(updated, (profile) => ({
+    ...profile,
+    id: " "
+  })), /档案 ID 不能为空/);
+  assert.throws(() => updateActiveProfile(updated, (profile) => ({
+    ...profile,
+    id: ""
+  })), /档案 ID 不能为空/);
+  assert.throws(() => updateActiveProfile(updated, (profile) => ({
+    ...profile,
+    id: null
+  })), /档案 ID 不能为空/);
+  const trimmedId = updateActiveProfile(updated, (profile) => ({
+    ...profile,
+    id: " profile_trimmed "
+  }));
+  assert.equal(trimmedId.activeProfileId, "profile_trimmed");
+  assert.equal(getActiveProfile(trimmedId).id, "profile_trimmed");
+  assert.throws(() => updateActiveProfile(updated, (profile) => ({
+    ...profile,
+    id: "profile_default"
+  })), /档案 ID 已存在|档案已存在/);
+  assert.throws(() => updateActiveProfile(updated, (profile) => ({
+    ...profile,
+    name: "日常维持"
+  })), /档案已存在/);
+
+  const switched = setActiveProfile(updated, "profile_default");
+  assert.equal(getActiveProfile(switched).name, "日常维持");
+
+  const deleted = deleteLocalProfile(switched, added.profiles[1].id);
+  assert.equal(deleted.profiles.length, 1);
+  assert.equal(deleted.activeProfileId, "profile_default");
+  assert.throws(() => deleteLocalProfile(deleted, "profile_default"), /至少保留一个档案/);
+  assert.throws(() => renameLocalProfile(deleted, "profile_default", " "), /档案名称不能为空/);
 });
 
 test("resolves a category default icon unless an explicit icon is selected", () => {
@@ -256,7 +446,7 @@ test("exports food and water rows for a rolling day range", () => {
       foodId: "food_rice",
       amount: 150,
       unit: "g",
-      nutrition: { calories: 174, protein: 3.9, carbs: 38.85, fat: 0.45, sodium: 1.5 }
+      nutrition: { calories: 174, protein: 3.9, carbs: 38.85, fat: 0.45, sodium: 1.5, fiber: 0.6 }
     }],
     note: "午餐",
     photo: "data:image/png;base64,ignored"
@@ -267,7 +457,7 @@ test("exports food and water rows for a rolling day range", () => {
       foodId: "food_rice",
       amount: 150,
       unit: "g",
-      nutrition: { calories: 174, protein: 3.9, carbs: 38.85, fat: 0.45, sodium: 1.5 }
+      nutrition: { calories: 174, protein: 3.9, carbs: 38.85, fat: 0.45, sodium: 1.5, fiber: 0.6 }
     }],
     note: "",
     photo: ""
@@ -288,6 +478,7 @@ test("exports food and water rows for a rolling day range", () => {
     carbs: 38.85,
     fat: 0.45,
     sodium: 1.5,
+    fiber: 0.6,
     waterMl: 0,
     note: "午餐"
   }, {
@@ -302,6 +493,7 @@ test("exports food and water rows for a rolling day range", () => {
     carbs: 0,
     fat: 0,
     sodium: 0,
+    fiber: 0,
     waterMl: 300,
     note: ""
   }]);
@@ -320,11 +512,12 @@ test("serializes exported rows as escaped CSV", () => {
     carbs: 38.85,
     fat: 0.45,
     sodium: 1.5,
+    fiber: 0.6,
     waterMl: 0,
     note: "午餐"
   }]);
 
-  assert.equal(csv.split("\n")[0], "date,timestamp,type,food,amount,unit,calories,protein,carbs,fat,sodium,waterMl,note");
+  assert.equal(csv.split("\n")[0], "date,timestamp,type,food,amount,unit,calories,protein,carbs,fat,sodium,fiber,waterMl,note");
   assert.match(csv, /"米饭,鸡蛋"/);
 });
 
@@ -358,13 +551,14 @@ test("estimates rough daily targets from profile with explicit goal overrides", 
   assert.equal(targets.protein, 84);
   assert.equal(targets.waterMl, 2200);
   assert.equal(targets.sodium, 2000);
+  assert.equal(targets.fiber, 25);
   assert.equal(targets.carbs > 0, true);
   assert.equal(targets.fat > 0, true);
 });
 
 test("builds daily structure statuses from summary and targets", () => {
   const state = createDefaultState();
-  state.dailyGoal = { calories: 2000, protein: 100, waterMl: 2000 };
+  state.dailyGoal = { calories: 2000, protein: 100, waterMl: 2000, fiber: 25 };
   state.entries = [{
     id: "entry_a",
     timestamp: "2026-05-18T12:00:00",
@@ -372,7 +566,7 @@ test("builds daily structure statuses from summary and targets", () => {
       foodId: "food_rice",
       amount: 150,
       unit: "g",
-      nutrition: { calories: 2100, protein: 60, carbs: 300, fat: 80, sodium: 2300 }
+      nutrition: { calories: 2100, protein: 60, carbs: 300, fat: 80, sodium: 2300, fiber: 20 }
     }],
     note: "",
     photo: ""
@@ -383,6 +577,7 @@ test("builds daily structure statuses from summary and targets", () => {
 
   assert.equal(structure.calories.status, "normal");
   assert.equal(structure.protein.status, "low");
+  assert.equal(structure.fiber.status, "normal");
   assert.equal(structure.waterMl.status, "severe-low");
   assert.equal(structure.sodium, undefined);
 });
