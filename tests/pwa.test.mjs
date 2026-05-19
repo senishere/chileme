@@ -6,6 +6,10 @@ function readText(path) {
   return readFileSync(new URL(path, import.meta.url), "utf8");
 }
 
+function readAppModule(path) {
+  return readText(path);
+}
+
 test("registers the service worker from the app entrypoint only when supported", () => {
   const app = readText("../src/app.js");
 
@@ -126,7 +130,8 @@ test("format energy inputs prefer explicit nonnegative kcal before kilojoules", 
 
 test("food form supports kilojoules and fiber nutrition fields", () => {
   const app = readText("../src/app.js");
-  const formBlock = app.match(/function openFoodForm\([\s\S]*?function openCategoryManager/)?.[0] || "";
+  const foods = readAppModule("../src/views/foods.js");
+  const formBlock = foods.match(/function openFoodForm\([\s\S]*?function openCategoryManager/)?.[0] || "";
   const submitBlock = app.match(/async function handleFoodSubmit\(form\) \{[\s\S]*?function exportJson/)?.[0] || "";
 
   assert.ok(formBlock);
@@ -141,8 +146,8 @@ test("food form supports kilojoules and fiber nutrition fields", () => {
 });
 
 test("settings source renders local profile controls and fiber target", () => {
-  const app = readText("../src/app.js");
-  const settingsBlock = app.match(/function renderSettings\([\s\S]*?function render\(\)/)?.[0] || "";
+  const settings = readAppModule("../src/views/settings.js");
+  const settingsBlock = settings.match(/function renderSettings\([\s\S]*/)?.[0] || "";
 
   assert.ok(settingsBlock);
   assert.match(settingsBlock, /当前档案/);
@@ -156,8 +161,8 @@ test("settings source renders local profile controls and fiber target", () => {
 });
 
 test("today source renders active profile banner from active record state", () => {
-  const app = readText("../src/app.js");
-  const todayBlock = app.match(/function renderToday\(\) \{[\s\S]*?function renderFoodRows/)?.[0] || "";
+  const today = readAppModule("../src/views/today.js");
+  const todayBlock = today.match(/function renderToday\([\s\S]*/)?.[0] || "";
 
   assert.ok(todayBlock);
   assert.match(todayBlock, /activeRecordState\(state\)/);
@@ -167,10 +172,12 @@ test("today source renders active profile banner from active record state", () =
 
 test("runtime render helpers project current profile records", () => {
   const app = readText("../src/app.js");
-  const summaryBlock = app.match(/function renderSummary\([\s\S]*?function statusLabel/)?.[0] || "";
-  const structureBlock = app.match(/function renderStructure\([\s\S]*?function renderQuickAdd/)?.[0] || "";
-  const timelineBlock = app.match(/function renderTimeline\([\s\S]*?function renderToday/)?.[0] || "";
-  const statsBlock = app.match(/function renderStats\([\s\S]*?function trendLabel/)?.[0] || "";
+  const today = readAppModule("../src/views/today.js");
+  const stats = readAppModule("../src/views/stats.js");
+  const summaryBlock = today.match(/function renderSummary\([\s\S]*?function statusLabel/)?.[0] || "";
+  const structureBlock = today.match(/function renderStructure\([\s\S]*?function renderQuickAdd/)?.[0] || "";
+  const timelineBlock = today.match(/function renderTimeline\([\s\S]*?function renderToday/)?.[0] || "";
+  const statsBlock = stats.match(/function renderStats\([\s\S]*?function trendLabel/)?.[0] || "";
   const exportBlock = app.match(/function exportRange\([\s\S]*?function importJson/)?.[0] || "";
 
   for (const block of [summaryBlock, structureBlock, timelineBlock, statsBlock, exportBlock]) {
@@ -195,23 +202,25 @@ test("bottom navigation uses simplified food label", () => {
 
 test("app exposes simplified recording and food editing contracts", () => {
   const app = readText("../src/app.js");
+  const foods = readAppModule("../src/views/foods.js");
 
-  assert.match(app, /data-action="edit-food"/);
-  assert.match(app, /openFoodForm\(target\.dataset\.foodId \|\| ""\)/);
+  assert.match(foods, /data-action="edit-food"/);
+  assert.match(app, /openFoodForm\(viewContext\(\), target\.dataset\.foodId \|\| ""\)/);
   assert.match(app, /name="foodId"/);
   assert.match(app, /name="amount"/);
   assert.match(app, /name="unit"/);
   assert.match(app, /nutritionPer100g/);
-  assert.match(app, /data-action="open-category-manager"/);
-  assert.match(app, /data-action="select-food-icon"/);
+  assert.match(foods, /data-action="open-category-manager"/);
+  assert.match(foods, /select-food-icon/);
   assert.match(app, /state\.foods = state\.foods\.map/);
   assert.doesNotMatch(app, /默认份量|营养标注方式|每份重量|整包重量|液体密度|拳头宽度|掌心宽度|手指宽度|常用容器/);
 });
 
 test("quick add rail has no standalone water shortcut and no prefilled 100g draft item", () => {
   const app = readText("../src/app.js");
-  const quickBlock = app.match(/function renderQuickAdd\(\) \{[\s\S]*?function renderTimeline/)?.[0] || "";
-  const modalBlock = app.match(/function openEntryModal\([\s\S]*?function openFoodForm/)?.[0] || "";
+  const today = readAppModule("../src/views/today.js");
+  const quickBlock = today.match(/function renderQuickAdd\([\s\S]*?function renderTimeline/)?.[0] || "";
+  const modalBlock = app.match(/function openEntryModal\([\s\S]*?function goalInputValue/)?.[0] || "";
 
   assert.ok(quickBlock);
   assert.doesNotMatch(quickBlock, /\+ 300ml|data-action="add-water"/);
@@ -221,8 +230,8 @@ test("quick add rail has no standalone water shortcut and no prefilled 100g draf
 });
 
 test("quick add calorie label separates number from unit for compact cards", () => {
-  const app = readText("../src/app.js");
-  const quickBlock = app.match(/function renderQuickAdd\(\) \{[\s\S]*?function renderTimeline/)?.[0] || "";
+  const today = readAppModule("../src/views/today.js");
+  const quickBlock = today.match(/function renderQuickAdd\([\s\S]*?function renderTimeline/)?.[0] || "";
   const css = readText("../src/styles.css");
 
   assert.ok(quickBlock);
@@ -233,6 +242,23 @@ test("quick add calorie label separates number from unit for compact cards", () 
   assert.match(css, /\.quick-calorie-unit/);
 });
 
+test("split views write normalized category fallback through app context callbacks", () => {
+  const app = readText("../src/app.js");
+  const today = readAppModule("../src/views/today.js");
+  const foods = readAppModule("../src/views/foods.js");
+  const quickBlock = today.match(/function renderQuickAdd\([\s\S]*?function renderTimeline/)?.[0] || "";
+  const foodFallbackBlock = foods.match(/function activeFoodCategory\([\s\S]*?function renderFoodRows/)?.[0] || "";
+  const foodRowsBlock = foods.match(/function renderFoodRows\([\s\S]*?function renderFoods/)?.[0] || "";
+  const foodsBlock = foods.match(/function renderFoods\([\s\S]*?function openFoodForm/)?.[0] || "";
+
+  assert.match(app, /setQuickCategory:\s*\(value\) => \{\s*quickCategory = value;\s*\}/);
+  assert.match(app, /setFoodLibraryCategory:\s*\(value\) => \{\s*foodLibraryCategory = value;\s*\}/);
+  assert.match(quickBlock, /context\.setQuickCategory\("favorite"\)/);
+  assert.match(foodFallbackBlock, /context\.setFoodLibraryCategory\("all"\)/);
+  assert.match(foodRowsBlock, /activeFoodCategory\(context\)/);
+  assert.match(foodsBlock, /activeFoodCategory\(context\)/);
+});
+
 test("domain no longer exports temporary portion compatibility helpers", () => {
   const domain = readText("../src/domain.js");
 
@@ -241,20 +267,21 @@ test("domain no longer exports temporary portion compatibility helpers", () => {
 
 test("category manager supports selecting default category icons", () => {
   const app = readText("../src/app.js");
-  const categoryManagerBlock = app.match(/function openCategoryManager\(\) \{[\s\S]*?function goalInputValue/)?.[0] || "";
+  const foods = readAppModule("../src/views/foods.js");
+  const categoryManagerBlock = foods.match(/function openCategoryManager\([\s\S]*/)?.[0] || "";
 
   assert.ok(categoryManagerBlock);
   assert.match(categoryManagerBlock, /name="icon"/);
-  assert.match(categoryManagerBlock, /data-action="select-category-icon"/);
+  assert.match(categoryManagerBlock, /select-category-icon/);
   assert.match(categoryManagerBlock, /ICON_OPTIONS/);
   assert.match(app, /action === "select-category-icon"/);
   assert.match(app, /addCategory\(state, data\.get\("categoryName"\), data\.get\("icon"\)\)/);
 });
 
 test("food list rows omit metadata chips for stable compact height", () => {
-  const app = readText("../src/app.js");
+  const foods = readAppModule("../src/views/foods.js");
   const css = readText("../src/styles.css");
-  const foodRowsBlock = app.match(/function renderFoodRows\(\) \{[\s\S]*?function renderFoods/)?.[0] || "";
+  const foodRowsBlock = foods.match(/function renderFoodRows\([\s\S]*?function renderFoods/)?.[0] || "";
 
   assert.ok(foodRowsBlock);
   assert.doesNotMatch(foodRowsBlock, /food-meta/);
@@ -275,10 +302,12 @@ test("food icon picker centers emoji within each button", () => {
 
 test("water can be recorded as a water entry from the food flow", () => {
   const app = readText("../src/app.js");
-  const timelineBlock = app.match(/function renderTimeline\([\s\S]*?function renderToday/)?.[0] || "";
+  const today = readAppModule("../src/views/today.js");
+  const timelineBlock = today.match(/function renderTimeline\([\s\S]*?function renderToday/)?.[0] || "";
   const submitBlock = app.match(/async function handleEntrySubmit\(form\) \{[\s\S]*?async function handleFoodSubmit/)?.[0] || "";
 
-  assert.match(app, /function isWaterFood\(food\)/);
+  assert.match(today, /function isWaterFood\(food\)/);
+  assert.match(app, /import \{ renderToday, isWaterFood, foodLabel \} from "\.\/views\/today\.js"/);
   assert.match(submitBlock, /updateActiveProfile\(state/);
   assert.match(submitBlock, /waterEntries = \[\.\.\.profile\.waterEntries\]/);
   assert.match(submitBlock, /waterEntries\.push/);
@@ -295,12 +324,12 @@ test("app install icon uses a rice emoji mark", () => {
 });
 
 test("today structure labels severe low status as serious shortage", () => {
-  const app = readText("../src/app.js");
-  const structureBlock = app.match(/function renderStructure\([\s\S]*?function renderToday/)?.[0] || "";
-  const iconBlock = app.match(/function structureIcon\(key\) \{[\s\S]*?function renderStructure/)?.[0] || "";
+  const today = readAppModule("../src/views/today.js");
+  const structureBlock = today.match(/function renderStructure\([\s\S]*?function renderToday/)?.[0] || "";
+  const iconBlock = today.match(/function structureIcon\(key\) \{[\s\S]*?function renderStructure/)?.[0] || "";
   const css = readText("../src/styles.css");
 
-  assert.match(app, /status === "severe-low"\)\s+return "严重不足"/);
+  assert.match(today, /status === "severe-low"\)\s+return "严重不足"/);
   assert.match(iconBlock, /🍱/);
   assert.match(iconBlock, /🥚/);
   assert.match(iconBlock, /🍚/);
@@ -316,16 +345,16 @@ test("today structure labels severe low status as serious shortage", () => {
 });
 
 test("timeline source does not render sodium", () => {
-  const app = readText("../src/app.js");
-  const timelineBlock = app.match(/function renderTimeline\([\s\S]*?function renderToday/)?.[0] || "";
+  const today = readAppModule("../src/views/today.js");
+  const timelineBlock = today.match(/function renderTimeline\([\s\S]*?function renderToday/)?.[0] || "";
 
   assert.ok(timelineBlock);
   assert.doesNotMatch(timelineBlock, /钠|sodium/);
 });
 
 test("stats source renders trend tabs without daily sodium rows", () => {
-  const app = readText("../src/app.js");
-  const statsBlock = app.match(/function renderStats\([\s\S]*?function renderSettings/)?.[0] || "";
+  const stats = readAppModule("../src/views/stats.js");
+  const statsBlock = stats.match(/function renderStats\([\s\S]*?function trendLabel/)?.[0] || "";
 
   assert.ok(statsBlock);
   assert.match(statsBlock, /最近一周/);
@@ -337,8 +366,8 @@ test("stats source renders trend tabs without daily sodium rows", () => {
 });
 
 test("settings source groups export controls into one form instead of four sibling buttons", () => {
-  const app = readText("../src/app.js");
-  const settingsBlock = app.match(/function renderSettings\([\s\S]*?function render\(\)/)?.[0] || "";
+  const settings = readAppModule("../src/views/settings.js");
+  const settingsBlock = settings.match(/function renderSettings\([\s\S]*/)?.[0] || "";
 
   assert.ok(settingsBlock);
   assert.match(settingsBlock, /data-action="export-range-form"/);
@@ -350,7 +379,8 @@ test("settings source groups export controls into one form instead of four sibli
 
 test("settings distinguishes full backup import from record detail JSON", () => {
   const app = readText("../src/app.js");
-  const settingsBlock = app.match(/function renderSettings\([\s\S]*?function render\(\)/)?.[0] || "";
+  const settings = readAppModule("../src/views/settings.js");
+  const settingsBlock = settings.match(/function renderSettings\([\s\S]*/)?.[0] || "";
   const importBlock = app.match(/function importJson\(\) \{[\s\S]*?document\.addEventListener\("click"/)?.[0] || "";
 
   assert.match(settingsBlock, /完整备份/);
