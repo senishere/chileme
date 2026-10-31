@@ -12,10 +12,13 @@ import {
   exportRowsAsCsv,
   findFood,
   getActiveProfile,
+  lastItemAmount,
   nonNegativeFiniteNumber,
   positiveFiniteNumber,
+  recentMeals,
   renameCategory,
   renameLocalProfile,
+  repeatEntryItems,
   setActiveProfile,
   setCategoryIcon,
   updateActiveProfile
@@ -135,6 +138,24 @@ function createDraftItem(foodId, amountValue = 100, unitValue = "g") {
   return buildEntryItem(food, amount, unit);
 }
 
+function defaultAmount(foodId) {
+  return lastItemAmount(state, foodId) || { amount: 100, unit: "g" };
+}
+
+function addRepeatedEntry(items) {
+  const repeated = repeatEntryItems(state, items);
+  if (!repeated.length) return;
+  state = updateActiveProfile(state, (profile) => ({
+    ...profile,
+    entries: [
+      ...profile.entries,
+      { id: createId("entry"), timestamp: new Date().toISOString(), items: repeated, note: "", photo: "" }
+    ]
+  }));
+  currentView = "today";
+  saveAndRender();
+}
+
 function draftTitle() {
   return entryDraft?.entryId ? "编辑记录" : "记录刚吃的";
 }
@@ -165,6 +186,7 @@ function updateEntryDraftFromForm(form) {
 }
 
 function renderEntryModal() {
+  const { amount, unit } = defaultAmount(selectedFoodId);
   modalRoot.hidden = false;
   modalRoot.innerHTML = `
     <section class="sheet" role="dialog" aria-modal="true" aria-label="${escapeAttr(draftTitle())}">
@@ -179,8 +201,8 @@ function renderEntryModal() {
             ${state.foods.map((item) => `<option value="${escapeAttr(item.id)}" ${item.id === selectedFoodId ? "selected" : ""}>${escapeHtml(item.name)}</option>`).join("")}
           </select>
         </label>
-        <label class="field"><span>数量</span><input name="amount" inputmode="decimal" value="100"></label>
-        <label class="field"><span>单位</span><select name="unit"><option value="g">g</option><option value="ml">ml</option></select></label>
+        <label class="field"><span>数量</span><input name="amount" inputmode="decimal" value="${escapeAttr(amount)}"></label>
+        <label class="field"><span>单位</span><select name="unit"><option value="g" ${unit === "g" ? "selected" : ""}>g</option><option value="ml" ${unit === "ml" ? "selected" : ""}>ml</option></select></label>
         <button class="button secondary" type="button" data-action="add-draft-item">加入记录</button>
         <div class="draft-list" aria-label="已加入食物">${renderDraftItems()}</div>
         <label class="field"><span>备注</span><textarea name="note" rows="2" placeholder="可选">${escapeHtml(entryDraft?.note || "")}</textarea></label>
@@ -381,6 +403,14 @@ document.addEventListener("click", (event) => {
   const action = target.dataset.action;
   if (action === "open-entry") openEntryModal(target.dataset.foodId || "");
   if (action === "edit-entry") openEntryModal("", target.dataset.entryId || "");
+  if (action === "repeat-entry") {
+    const entry = activeRecordState(state).entries.find((item) => item.id === target.dataset.entryId);
+    if (entry) addRepeatedEntry(entry.items);
+  }
+  if (action === "repeat-meal") {
+    const meal = recentMeals(state).find((item) => item.key === target.dataset.mealKey);
+    if (meal) addRepeatedEntry(meal.items);
+  }
   if (action === "show-foods") {
     currentView = "foods";
     render();
@@ -616,7 +646,12 @@ modalRoot.addEventListener("change", (event) => {
   if (!select) return;
   const form = select.closest("form");
   updateEntryDraftFromForm(form);
-  if (select.name === "foodId") selectedFoodId = select.value;
+  if (select.name === "foodId") {
+    selectedFoodId = select.value;
+    const { amount, unit } = defaultAmount(selectedFoodId);
+    if (form?.elements.amount) form.elements.amount.value = amount;
+    if (form?.elements.unit) form.elements.unit.value = unit;
+  }
 });
 
 registerServiceWorker();

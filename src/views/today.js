@@ -4,7 +4,9 @@ import {
   dateKey,
   filterFoods,
   findFood,
+  foodUsageCounts,
   getActiveProfile,
+  recentMeals,
   summarizeDay
 } from "../domain.js";
 import {
@@ -117,6 +119,10 @@ function renderQuickAdd(context) {
   const activeCategory = categories.includes(context.quickCategory) ? context.quickCategory : "favorite";
   if (activeCategory !== context.quickCategory) context.setQuickCategory("favorite");
   const quickFoods = filterFoods(state.foods, { category: activeCategory });
+  if (activeCategory === "favorite") {
+    const counts = foodUsageCounts(state);
+    quickFoods.sort((a, b) => (counts.get(b.id) || 0) - (counts.get(a.id) || 0));
+  }
   const cards = quickFoods.map((food) => `
       <button class="quick-card" type="button" data-action="open-entry" data-food-id="${escapeAttr(food.id)}">
         ${quickThumbHtml(food)}
@@ -140,6 +146,39 @@ function renderQuickAdd(context) {
         <button class="button secondary" type="button" data-action="show-foods">搜索/更多</button>
         <button class="button" type="button" data-action="open-entry">+ 自定义</button>
       </div>
+    </section>
+  `;
+}
+
+function renderRecentMeals(context) {
+  const { state } = context;
+  const meals = recentMeals(state);
+  if (!meals.length) return "";
+  const cards = meals.map((meal) => {
+    const firstFood = findFood(state, meal.items[0].foodId);
+    const title = meal.items.map((item) => foodLabel(findFood(state, item.foodId))).join(" + ");
+    const amounts = meal.items.map((item) => itemAmountLabel(item)).join(" + ");
+    const calories = meal.items.reduce((sum, item) => sum + (item.nutrition?.calories || 0), 0);
+    return `
+      <button class="quick-card meal-card" type="button" data-action="repeat-meal" data-meal-key="${escapeAttr(meal.key)}">
+        ${quickThumbHtml(firstFood)}
+        <span class="meal-name">${escapeHtml(title)}</span>
+        <span class="meal-amounts">${escapeHtml(amounts)}</span>
+        <span class="quick-calories">
+          <span class="quick-calorie-value">${formatNumber(calories)}</span>
+          <span class="quick-calorie-unit">kcal · 吃过 ${meal.count} 次</span>
+        </span>
+      </button>
+    `;
+  }).join("");
+
+  return `
+    <section class="panel">
+      <div class="section-head">
+        <h2>常吃组合</h2>
+        <span class="hint">点一下直接记录</span>
+      </div>
+      <div class="quick-rail">${cards}</div>
     </section>
   `;
 }
@@ -196,6 +235,7 @@ function renderTimeline(context, day, records) {
           ${entry.note ? `<p class="entry-meta">${escapeHtml(entry.note)}</p>` : ""}
         </div>
         <div class="entry-actions">
+          <button class="icon-button" type="button" aria-label="再来一次" data-action="repeat-entry" data-entry-id="${escapeAttr(entry.id)}">↻</button>
           <button class="icon-button" type="button" aria-label="编辑记录" data-action="edit-entry" data-entry-id="${escapeAttr(entry.id)}">✎</button>
           <button class="icon-button" type="button" aria-label="删除记录" data-action="delete-entry" data-entry-id="${escapeAttr(entry.id)}">×</button>
         </div>
@@ -222,5 +262,5 @@ export function renderToday(context) {
       <span class="hint">当前档案</span>
       <strong class="profile-name">${escapeHtml(activeProfile.name)}</strong>
     </section>
-  ` + renderSummary(context, day, records) + renderStructure(context, day, records) + renderQuickAdd(context) + renderTimeline(context, day, records);
+  ` + renderSummary(context, day, records) + renderStructure(context, day, records) + renderRecentMeals(context) + renderQuickAdd(context) + renderTimeline(context, day, records);
 }

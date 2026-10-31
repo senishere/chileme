@@ -720,3 +720,77 @@ export function buildEntryItem(food, amountValue, unitValue = "g") {
     nutrition: calculateItemNutrition(food, amount, unit)
   };
 }
+
+function recentEntries(records, endDayKey, days) {
+  const startDayKey = addDays(endDayKey, -(days - 1));
+  return (records.entries || []).filter((entry) => {
+    const day = dateKey(entry.timestamp);
+    return day >= startDayKey && day <= endDayKey;
+  });
+}
+
+function mealKey(items) {
+  return items
+    .map((item) => `${item.foodId}:${item.amount}${item.unit || "g"}`)
+    .sort()
+    .join("|");
+}
+
+export function recentMeals(state, options = {}) {
+  const records = hasProjectedRecords(state) ? state : activeRecordState(state);
+  const endDayKey = options.endDayKey || dateKey();
+  const days = options.days || 14;
+  const limit = options.limit || 6;
+  const meals = new Map();
+
+  for (const entry of recentEntries(records, endDayKey, days)) {
+    const items = (entry.items || []).filter((item) => findFood(state, item.foodId));
+    if (!items.length) continue;
+    const key = mealKey(items);
+    const meal = meals.get(key);
+    if (!meal) {
+      meals.set(key, { key, items, count: 1, lastTimestamp: entry.timestamp });
+      continue;
+    }
+    meal.count += 1;
+    if (new Date(entry.timestamp) > new Date(meal.lastTimestamp)) {
+      meal.items = items;
+      meal.lastTimestamp = entry.timestamp;
+    }
+  }
+
+  return [...meals.values()]
+    .sort((a, b) => b.count - a.count || new Date(b.lastTimestamp) - new Date(a.lastTimestamp))
+    .slice(0, limit);
+}
+
+export function lastItemAmount(state, foodId) {
+  const records = hasProjectedRecords(state) ? state : activeRecordState(state);
+  let latest = null;
+  for (const entry of records.entries || []) {
+    const item = (entry.items || []).find((candidate) => candidate.foodId === foodId);
+    if (!item) continue;
+    if (!latest || new Date(entry.timestamp) > new Date(latest.timestamp)) {
+      latest = { timestamp: entry.timestamp, amount: item.amount, unit: item.unit === "ml" ? "ml" : "g" };
+    }
+  }
+  return latest ? { amount: latest.amount, unit: latest.unit } : null;
+}
+
+export function foodUsageCounts(state, endDayKey = dateKey(), days = 30) {
+  const records = hasProjectedRecords(state) ? state : activeRecordState(state);
+  const counts = new Map();
+  for (const entry of recentEntries(records, endDayKey, days)) {
+    for (const item of entry.items || []) {
+      counts.set(item.foodId, (counts.get(item.foodId) || 0) + 1);
+    }
+  }
+  return counts;
+}
+
+export function repeatEntryItems(state, items) {
+  return (items || []).flatMap((item) => {
+    const food = findFood(state, item.foodId);
+    return food ? [buildEntryItem(food, item.amount, item.unit)] : [];
+  });
+}

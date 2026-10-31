@@ -19,6 +19,10 @@ import {
   exportRowsAsCsv,
   filterFoods,
   findFood,
+  foodUsageCounts,
+  lastItemAmount,
+  recentMeals,
+  repeatEntryItems,
   getActiveProfile,
   kilojoulesToCalories,
   limitStatus,
@@ -595,4 +599,77 @@ test("builds daily structure statuses from summary and targets", () => {
   assert.equal(structure.fiber.status, "normal");
   assert.equal(structure.waterMl.status, "severe-low");
   assert.equal(structure.sodium, undefined);
+});
+
+function stateWithEntries(entries) {
+  return updateActiveProfile(createDefaultState(), (profile) => ({ ...profile, entries }));
+}
+
+function quickEntry(id, timestamp, items) {
+  const state = createDefaultState();
+  return {
+    id,
+    timestamp,
+    note: "",
+    photo: "",
+    items: items.map(([foodId, amount, unit = "g"]) => buildEntryItem(findFood(state, foodId), amount, unit))
+  };
+}
+
+test("recent meals group identical combinations and rank by frequency then recency", () => {
+  const state = stateWithEntries([
+    quickEntry("e1", "2026-10-28T08:00:00", [["food_oatmeal", 50], ["food_apple", 150]]),
+    quickEntry("e2", "2026-10-29T08:00:00", [["food_apple", 150], ["food_oatmeal", 50]]),
+    quickEntry("e3", "2026-10-30T12:00:00", [["food_rice", 200]]),
+    quickEntry("e4", "2026-10-01T12:00:00", [["food_broccoli", 100]])
+  ]);
+
+  const meals = recentMeals(state, { endDayKey: "2026-10-31", days: 14 });
+
+  assert.equal(meals.length, 2);
+  assert.equal(meals[0].count, 2);
+  assert.deepEqual(meals[0].items.map((item) => item.foodId), ["food_apple", "food_oatmeal"]);
+  assert.equal(meals[1].items[0].foodId, "food_rice");
+});
+
+test("recent meals skip items whose food was deleted", () => {
+  const state = stateWithEntries([
+    quickEntry("e1", "2026-10-30T08:00:00", [["food_apple", 150]])
+  ]);
+  state.foods = state.foods.filter((food) => food.id !== "food_apple");
+
+  assert.deepEqual(recentMeals(state, { endDayKey: "2026-10-31" }), []);
+});
+
+test("last item amount returns the most recent portion for a food", () => {
+  const state = stateWithEntries([
+    quickEntry("e1", "2026-10-30T08:00:00", [["food_rice", 180]]),
+    quickEntry("e2", "2026-10-28T08:00:00", [["food_rice", 250]])
+  ]);
+
+  assert.deepEqual(lastItemAmount(state, "food_rice"), { amount: 180, unit: "g" });
+  assert.equal(lastItemAmount(state, "food_apple"), null);
+});
+
+test("food usage counts only include the recent window", () => {
+  const state = stateWithEntries([
+    quickEntry("e1", "2026-10-30T08:00:00", [["food_rice", 180], ["food_apple", 100]]),
+    quickEntry("e2", "2026-10-29T08:00:00", [["food_rice", 180]]),
+    quickEntry("e3", "2026-08-01T08:00:00", [["food_apple", 100]])
+  ]);
+  const counts = foodUsageCounts(state, "2026-10-31", 30);
+
+  assert.equal(counts.get("food_rice"), 2);
+  assert.equal(counts.get("food_apple"), 1);
+});
+
+test("repeat entry items recompute nutrition from current food data", () => {
+  const state = createDefaultState();
+  const [item] = quickEntry("e1", "2026-10-30T08:00:00", [["food_rice", 200]]).items;
+  findFood(state, "food_rice").nutritionPer100g.calories = 100;
+
+  const repeated = repeatEntryItems(state, [item, { foodId: "missing", amount: 1, unit: "g" }]);
+
+  assert.equal(repeated.length, 1);
+  assert.equal(repeated[0].nutrition.calories, 200);
 });

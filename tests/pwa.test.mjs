@@ -21,7 +21,7 @@ test("registers the service worker from the app entrypoint only when supported",
 test("service worker precaches the app shell for offline startup", () => {
   const sw = readText("../sw.js");
 
-  assert.match(sw, /const CACHE_NAME = "chileme-app-shell-v2"/);
+  assert.match(sw, /const CACHE_NAME = "chileme-app-shell-v3"/);
   for (const asset of [
     "./",
     "./index.html",

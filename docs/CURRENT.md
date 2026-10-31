@@ -1,14 +1,13 @@
 # 当前进度
 
-更新时间：2026-05-19
+更新时间：2026-10-31
 
 ## 当前版本
 
 - 应用名称：吃了么
-- 当前分支：`feature/nutrition-profiles`
-- 本轮实现提交：`12bc98c`、`392a9c4`、`9f7714b`、`3deca08`、`93f0011`
-- 文档收尾提交：`docs: update nutrition profiles status`
-- 本地目录：`/Users/sen/projects/chileme/.worktrees/nutrition-profiles`
+- 当前分支：`feature/quick-entry`（基于 `main`；`main` 领先 `origin/main` 8 个提交，尚未推送）
+- 远程仓库：https://github.com/senishere/chileme
+- 本地目录：`/Users/sen/projects/chileme`
 - 本地预览：运行 `npm run serve` 后打开 `http://127.0.0.1:4173/`
 
 ## 已完成
@@ -21,24 +20,13 @@
 - 识别接口与类型已预留；当前版本不上传照片、不调用识别服务。
 - 视图已拆分为 today、foods、stats、settings，并抽出格式化、图片和识别辅助模块。
 - Service worker 已缓存拆分后的静态模块。
+- 食物表单：热量单输入框 + kcal/kJ 单位选择；食物和分类图标支持自由输入 emoji，分类可改图标。
+- 降低录入成本（方案 1）：今日页「常吃组合」按最近 14 天相同组合聚合，一键记录；时间线每条记录可「↻ 再来一次」；录入弹窗默认填上次吃该食物的分量；「最常吃」按最近 30 天食用次数排序。
 
-## 本轮验证
+## 本轮验证（2026-10-31）
 
-- `npm test`：81/81 通过
-- `TZ=America/Los_Angeles npm test`：81/81 通过
-- `node --check src/app.js`：通过
-- `node --check src/domain.js`：通过
-- `node --check src/store.js`：通过
-- `node --check src/ui/format.js`：通过
-- `node --check src/ui/image.js`：通过
-- `node --check src/recognition.js`：通过
-- `node --check src/views/today.js`：通过
-- `node --check src/views/foods.js`：通过
-- `node --check src/views/stats.js`：通过
-- `node --check src/views/settings.js`：通过
-- `node --check sw.js`：通过
-- `git diff --check`：通过
-- 本地 HTTP smoke：`http://127.0.0.1:4173/`、`/src/app.js`、`/src/views/today.js`、`/src/ui/format.js`、`/manifest.webmanifest` 均返回 200；临时服务已停止
+- `npm test`：87/87 通过
+- `TZ=America/Los_Angeles npm test`：87/87 通过
 - 手动浏览器 smoke：未运行
 
 ## 使用提示
@@ -50,7 +38,7 @@
 
 ## 下一轮候选
 
-1. 实际选择一个 HTTPS 托管平台并发布，得到 iPhone 可访问公网地址。
-2. 接入真实 LLM 拍照识别服务，并补齐上传、隐私提示、错误处理和人工确认流程。
-3. 常用食物默认列表可进一步缩短，让“最常吃”首屏更聚焦。
+1. 部署到 HTTPS（倾向 GitHub Pages），得到 iPhone 可访问公网地址。
+2. 方案 2：一句话记录。文字/键盘听写输入 → LLM 拆分食物、估算分量和营养 → 人工确认后保存；API key 本地保存，浏览器直连 Anthropic API。
+3. 方案 3：在方案 2 基础上加拍照识别（复用 `src/recognition.js` 预留接口）。
 4. 导入流程可增加 CSV 恢复；当前完整备份 JSON 是备份恢复主路径，记录明细 JSON/CSV 只用于查看或外部分析。
