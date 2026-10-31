@@ -5,7 +5,8 @@
 ## 当前版本
 
 - 应用名称：吃了么
-- 当前分支：`feature/quick-entry`（基于 `main`；`main` 领先 `origin/main` 8 个提交，尚未推送）
+- 当前分支：`main`（已推送；`feature/quick-entry` 已快进合并）
+- 线上地址：https://senishere.github.io/chileme/ （GitHub Pages，推送 `main` 后约 20 秒自动更新）
 - 远程仓库：https://github.com/senishere/chileme
 - 本地目录：`/Users/sen/projects/chileme`
 - 本地预览：运行 `npm run serve` 后打开 `http://127.0.0.1:4173/`
@@ -38,7 +39,6 @@
 
 ## 下一轮候选
 
-1. 部署到 HTTPS（倾向 GitHub Pages），得到 iPhone 可访问公网地址。
-2. 方案 2：一句话记录。文字/键盘听写输入 → LLM 拆分食物、估算分量和营养 → 人工确认后保存；API key 本地保存，浏览器直连 Anthropic API。
-3. 方案 3：在方案 2 基础上加拍照识别（复用 `src/recognition.js` 预留接口）。
-4. 导入流程可增加 CSV 恢复；当前完整备份 JSON 是备份恢复主路径，记录明细 JSON/CSV 只用于查看或外部分析。
+1. 方案 2：一句话记录。文字/键盘听写输入 → LLM 拆分食物、估算分量和营养 → 人工确认后保存；API key 本地保存，浏览器直连 Anthropic API。
+2. 方案 3：在方案 2 基础上加拍照识别（复用 `src/recognition.js` 预留接口）。
+3. 导入流程可增加 CSV 恢复；当前完整备份 JSON 是备份恢复主路径，记录明细 JSON/CSV 只用于查看或外部分析。
