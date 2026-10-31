@@ -121,27 +121,34 @@ test("recognition draft helpers expose Task 3 result shapes", async () => {
   });
 });
 
-test("format energy inputs prefer explicit nonnegative kcal before kilojoules", async () => {
-  const { caloriesFromEnergyInputs } = await import("../src/ui/format.js");
+test("format energy input converts selected kilojoules to calories", async () => {
+  const { caloriesFromEnergyInput } = await import("../src/ui/format.js");
 
-  assert.equal(caloriesFromEnergyInputs(0, 418.4), 0);
-  assert.equal(caloriesFromEnergyInputs("", 418.4), 100);
+  assert.equal(caloriesFromEnergyInput(100, "kcal"), 100);
+  assert.equal(caloriesFromEnergyInput(418.4, "kJ"), 100);
+  assert.equal(caloriesFromEnergyInput("", "kJ"), 0);
 });
 
-test("food form supports kilojoules and fiber nutrition fields", () => {
+test("food form supports free emoji input, energy unit selection, and fiber fields", () => {
   const app = readText("../src/app.js");
   const foods = readAppModule("../src/views/foods.js");
   const formBlock = foods.match(/function openFoodForm\([\s\S]*?function openCategoryManager/)?.[0] || "";
   const submitBlock = app.match(/async function handleFoodSubmit\(form\) \{[\s\S]*?function exportJson/)?.[0] || "";
 
   assert.ok(formBlock);
-  assert.match(formBlock, /name="kilojoules"/);
+  assert.match(formBlock, /name="icon"[\s\S]*value="\$\{escapeAttr\(icon\)\}"/);
+  assert.doesNotMatch(formBlock, /<input type="hidden" name="icon"/);
+  assert.match(formBlock, /name="energy"/);
+  assert.match(formBlock, /name="energyUnit"/);
+  assert.match(formBlock, /<option value="kcal" selected>kcal<\/option>/);
+  assert.match(formBlock, /<option value="kJ">kJ<\/option>/);
+  assert.doesNotMatch(formBlock, /name="kilojoules"/);
   assert.match(formBlock, /name="fiber"/);
-  assert.match(formBlock, /name="calories"[\s\S]*value="\$\{escapeAttr\(existingFood \? \(nutrition\.calories \?\? ""\) : ""\)\}"/);
-  assert.doesNotMatch(formBlock, /name="calories"[\s\S]*nutrition\.calories\s*\|\|\s*0/);
-  assert.doesNotMatch(formBlock, /name="calories"[\s\S]*nutrition\.calories\s*\?\?\s*0/);
+  assert.match(formBlock, /name="energy"[\s\S]*value="\$\{escapeAttr\(existingFood \? \(nutrition\.calories \?\? ""\) : ""\)\}"/);
+  assert.doesNotMatch(formBlock, /name="energy"[\s\S]*nutrition\.calories\s*\|\|\s*0/);
+  assert.doesNotMatch(formBlock, /name="energy"[\s\S]*nutrition\.calories\s*\?\?\s*0/);
   assert.ok(submitBlock);
-  assert.match(submitBlock, /caloriesFromEnergyInputs\(data\.get\("calories"\), data\.get\("kilojoules"\)\)/);
+  assert.match(submitBlock, /caloriesFromEnergyInput\(data\.get\("energy"\), data\.get\("energyUnit"\)\)/);
   assert.match(submitBlock, /nutritionPer100g:\s*\{[\s\S]*fiber:\s*nonNegativeFiniteNumber\(data\.get\("fiber"\), 0\)/);
 });
 
@@ -271,10 +278,14 @@ test("category manager supports selecting default category icons", () => {
   const categoryManagerBlock = foods.match(/function openCategoryManager\([\s\S]*/)?.[0] || "";
 
   assert.ok(categoryManagerBlock);
-  assert.match(categoryManagerBlock, /name="icon"/);
+  assert.match(categoryManagerBlock, /name="icon"[\s\S]*value="\$\{escapeAttr\(icon\)\}"/);
+  assert.doesNotMatch(categoryManagerBlock, /<input type="hidden" name="icon"/);
   assert.match(categoryManagerBlock, /select-category-icon/);
   assert.match(categoryManagerBlock, /ICON_OPTIONS/);
+  assert.match(categoryManagerBlock, /edit-category-icon/);
   assert.match(app, /action === "select-category-icon"/);
+  assert.match(app, /action === "edit-category-icon"/);
+  assert.match(app, /setCategoryIcon\(state, target\.dataset\.category \|\| "", nextIcon\)/);
   assert.match(app, /addCategory\(state, data\.get\("categoryName"\), data\.get\("icon"\)\)/);
 });
 

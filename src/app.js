@@ -17,6 +17,7 @@ import {
   renameCategory,
   renameLocalProfile,
   setActiveProfile,
+  setCategoryIcon,
   updateActiveProfile
 } from "./domain.js";
 import {
@@ -27,7 +28,7 @@ import {
 import {
   escapeAttr,
   escapeHtml,
-  caloriesFromEnergyInputs,
+  caloriesFromEnergyInput,
   formatNumber,
   itemAmountLabel
 } from "./ui/format.js";
@@ -93,6 +94,11 @@ function viewContext() {
       foodLibraryCategory = value;
     }
   };
+}
+
+function categoryIcon(categoryName, fallbackIcon = "") {
+  const category = state.categories.find((item) => item.name === categoryName);
+  return defaultIconForCategory(categoryName, fallbackIcon || category?.icon);
 }
 
 function render() {
@@ -286,10 +292,10 @@ async function handleFoodSubmit(form) {
     id: foodId,
     name: String(data.get("name") || "未命名"),
     category,
-    icon: defaultIconForCategory(category, icon || existingFood?.icon),
+    icon: categoryIcon(category, icon || existingFood?.icon),
     image: image.dataUrl || existingFood?.image || "",
     nutritionPer100g: {
-      calories: caloriesFromEnergyInputs(data.get("calories"), data.get("kilojoules")),
+      calories: caloriesFromEnergyInput(data.get("energy"), data.get("energyUnit")),
       protein: nonNegativeFiniteNumber(data.get("protein"), 0),
       carbs: nonNegativeFiniteNumber(data.get("carbs"), 0),
       fat: nonNegativeFiniteNumber(data.get("fat"), 0),
@@ -411,6 +417,18 @@ document.addEventListener("click", (event) => {
         openCategoryManager(viewContext());
       } catch (error) {
         alert(error.message || "分类更新失败");
+      }
+    }
+  }
+  if (action === "edit-category-icon") {
+    const nextIcon = prompt("新的分类图标", target.dataset.icon || "🍽️");
+    if (nextIcon !== null) {
+      try {
+        state = setCategoryIcon(state, target.dataset.category || "", nextIcon);
+        saveAndRender();
+        openCategoryManager(viewContext());
+      } catch (error) {
+        alert(error.message || "分类图标更新失败");
       }
     }
   }
@@ -539,7 +557,7 @@ document.addEventListener("change", (event) => {
   const select = event.target.closest('form[data-action="save-food"] select[name="category"]');
   if (!select) return;
   const form = select.closest("form");
-  const icon = defaultIconForCategory(select.value);
+  const icon = categoryIcon(select.value);
   if (form?.elements.icon) form.elements.icon.value = icon;
   form?.querySelectorAll('[data-action="select-food-icon"]').forEach((button) => {
     button.classList.toggle("active", button.dataset.icon === icon);

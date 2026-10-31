@@ -57,7 +57,8 @@ food("food_unique_id", "食物名", "分类名", "emoji", {
   protein: 1,
   carbs: 10,
   fat: 1,
-  sodium: 0
+  sodium: 0,
+  fiber: 0
 })
 ```
 
@@ -68,6 +69,7 @@ food("food_unique_id", "食物名", "分类名", "emoji", {
 - `carbs`：g / 100g
 - `fat`：g / 100g
 - `sodium`：mg / 100g
+- `fiber`：g / 100g
 
 示例：
 
@@ -77,7 +79,8 @@ food("food_kiwi", "猕猴桃", "水果", "🥝", {
   protein: 1.1,
   carbs: 14.7,
   fat: 0.5,
-  sodium: 3
+  sodium: 3,
+  fiber: 3
 })
 ```
 
@@ -89,7 +92,8 @@ food("food_soy_sauce", "酱油", "调味", "🍶", {
   protein: 8,
   carbs: 4.9,
   fat: 0.6,
-  sodium: 5600
+  sodium: 5600,
+  fiber: 0
 }, false)
 ```
 

@@ -31,6 +31,11 @@ function activeFoodCategory(context) {
   return "all";
 }
 
+function categoryIcon(state, categoryName, fallbackIcon = "") {
+  const category = state.categories.find((item) => item.name === categoryName);
+  return defaultIconForCategory(categoryName, fallbackIcon || category?.icon);
+}
+
 export function renderFoodRows(context) {
   const { state, foodSearchQuery } = context;
   const category = activeFoodCategory(context);
@@ -87,7 +92,7 @@ export function openFoodForm(context, foodId = "") {
   const title = existingFood ? "编辑食物" : "新增食物";
   const nutrition = existingFood?.nutritionPer100g || {};
   const category = existingFood?.category || state.categories[0]?.name || "其他";
-  const icon = defaultIconForCategory(category, existingFood?.icon);
+  const icon = categoryIcon(state, category, existingFood?.icon);
 
   modalRoot.hidden = false;
   modalRoot.innerHTML = `
@@ -98,12 +103,11 @@ export function openFoodForm(context, foodId = "") {
       </div>
       <form class="form-grid" data-action="save-food">
         <input type="hidden" name="foodId" value="${escapeAttr(existingFood?.id || "")}">
-        <input type="hidden" name="icon" value="${escapeAttr(icon)}">
         <label class="field"><span>名称</span><input name="name" required placeholder="例如 牛奶" value="${escapeAttr(existingFood?.name || "")}"></label>
+        <label class="field"><span>图标</span><input name="icon" inputmode="text" placeholder="例如 🧅" value="${escapeAttr(icon)}"></label>
         <label class="field"><span>分类</span><select name="category">${state.categories.map((item) => `<option value="${escapeAttr(item.name)}" ${item.name === category ? "selected" : ""}>${escapeHtml(item.name)}</option>`).join("")}</select></label>
         ${iconPicker("select-food-icon", icon)}
-        <label class="field"><span>每 100g 热量 kcal</span><input name="calories" inputmode="decimal" value="${escapeAttr(existingFood ? (nutrition.calories ?? "") : "")}"></label>
-        <label class="field"><span>每 100g 热量 kJ</span><input name="kilojoules" inputmode="decimal" value=""></label>
+        <label class="field"><span>每 100g 热量</span><span class="split-input"><input name="energy" inputmode="decimal" value="${escapeAttr(existingFood ? (nutrition.calories ?? "") : "")}"><select name="energyUnit"><option value="kcal" selected>kcal</option><option value="kJ">kJ</option></select></span></label>
         <label class="field"><span>每 100g 蛋白质 g</span><input name="protein" inputmode="decimal" value="${escapeAttr(nutrition.protein || 0)}"></label>
         <label class="field"><span>每 100g 碳水 g</span><input name="carbs" inputmode="decimal" value="${escapeAttr(nutrition.carbs || 0)}"></label>
         <label class="field"><span>每 100g 脂肪 g</span><input name="fat" inputmode="decimal" value="${escapeAttr(nutrition.fat || 0)}"></label>
@@ -129,8 +133,8 @@ export function openCategoryManager(context) {
         <button class="icon-button" type="button" data-action="close-modal">×</button>
       </div>
       <form class="category-add" data-action="add-category">
-        <input type="hidden" name="icon" value="${escapeAttr(icon)}">
         <label class="field"><span>新分类</span><input name="categoryName" required placeholder="例如 备餐"></label>
+        <label class="field"><span>图标</span><input name="icon" inputmode="text" placeholder="例如 🧅" value="${escapeAttr(icon)}"></label>
         ${iconPicker("select-category-icon", icon)}
         <button class="button" type="submit">添加</button>
       </form>
@@ -139,6 +143,7 @@ export function openCategoryManager(context) {
           <article class="category-row">
             <span><strong>${escapeHtml(category.icon || "🍽️")}</strong> ${escapeHtml(category.name)}</span>
             <div class="food-actions">
+              <button class="button secondary compact" type="button" data-action="edit-category-icon" data-category="${escapeAttr(category.name)}" data-icon="${escapeAttr(category.icon || "🍽️")}">改图标</button>
               <button class="button secondary compact" type="button" data-action="rename-category" data-category="${escapeAttr(category.name)}">重命名</button>
               <button class="icon-button" type="button" aria-label="删除分类" data-action="delete-category" data-category="${escapeAttr(category.name)}">×</button>
             </div>

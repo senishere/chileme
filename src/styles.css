@@ -508,6 +508,14 @@ h1 {
   padding: 10px;
 }
 
+.split-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 84px;
+  gap: 8px;
+  color: inherit;
+  font-size: 1rem;
+}
+
 .profile-banner {
   display: flex;
   align-items: center;
@@ -619,6 +627,11 @@ h1 {
   gap: 8px;
   align-items: end;
   margin-bottom: 12px;
+}
+
+.category-add .icon-picker,
+.category-add .button {
+  grid-column: 1 / -1;
 }
 
 .category-list {

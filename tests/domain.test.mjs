@@ -26,6 +26,7 @@ import {
   nutritionStatus,
   renameCategory,
   renameLocalProfile,
+  setCategoryIcon,
   setActiveProfile,
   summarizeDay,
   sevenDayStats,
@@ -226,7 +227,7 @@ test("builds entry items without portion templates", () => {
     amount: 150,
     unit: "g",
     grams: 150,
-    nutrition: { calories: 174, protein: 3.9, carbs: 38.85, fat: 0.45, sodium: 1.5, fiber: 0 }
+    nutrition: { calories: 174, protein: 3.9, carbs: 38.85, fat: 0.45, sodium: 1.5, fiber: 0.6 }
   });
 });
 
@@ -249,6 +250,10 @@ test("default foods use simplified categories and icon fields", () => {
   });
   assert.equal(typeof findFood(state, "food_rice").icon, "string");
   assert.equal(typeof findFood(state, "food_rice").nutritionPer100g.calories, "number");
+  assert.equal(findFood(state, "food_chicken").nutritionPer100g.fiber, 0);
+  assert.equal(findFood(state, "food_oatmeal").nutritionPer100g.fiber, 10.6);
+  assert.equal(findFood(state, "food_apple").nutritionPer100g.fiber, 2.4);
+  assert.equal(findFood(state, "food_broccoli").nutritionPer100g.fiber, 2.6);
 });
 
 test("category helpers add rename delete and move foods to fallback category", () => {
@@ -279,6 +284,16 @@ test("category helpers add rename delete and move foods to fallback category", (
   assert.throws(() => renameCategory(deleted, "其他", "细粮"), /分类已存在/);
   assert.throws(() => deleteCategory(deleted, "其他"), /不能删除/);
   assert.throws(() => addCategory(deleted, " "), /分类名称/);
+});
+
+test("category icon helper updates existing category icons", () => {
+  const state = createDefaultState();
+  const updated = setCategoryIcon(state, "细粮", "🍙");
+
+  assert.notEqual(updated, state);
+  assert.equal(updated.categories.find((category) => category.name === "细粮").icon, "🍙");
+  assert.equal(state.categories.find((category) => category.name === "细粮").icon, "🍚");
+  assert.throws(() => setCategoryIcon(updated, "不存在", "⭐"), /分类不存在/);
 });
 
 test("default state starts with one active local profile", () => {

@@ -43,11 +43,8 @@ export function itemAmountLabel(item) {
   );
 }
 
-export function caloriesFromEnergyInputs(caloriesValue, kilojoulesValue) {
-  const caloriesText = String(caloriesValue ?? "").trim();
-  if (caloriesText !== "") {
-    const calories = Number(caloriesValue);
-    if (Number.isFinite(calories) && calories >= 0) return calories;
-  }
-  return kilojoulesToCalories(kilojoulesValue);
+export function caloriesFromEnergyInput(value, unit = "kcal") {
+  if (unit === "kJ") return kilojoulesToCalories(value);
+  const calories = Number(value);
+  return Number.isFinite(calories) && calories >= 0 ? calories : 0;
 }
